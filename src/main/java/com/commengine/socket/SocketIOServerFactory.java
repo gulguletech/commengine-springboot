@@ -2,6 +2,7 @@ package com.commengine.socket;
 
 import com.commengine.config.AppProperties;
 import com.commengine.security.JwtService;
+import com.corundumstudio.socketio.AuthorizationResult;
 import com.corundumstudio.socketio.Configuration;
 import com.corundumstudio.socketio.SocketConfig;
 import com.corundumstudio.socketio.SocketIOServer;
@@ -47,14 +48,17 @@ public class SocketIOServerFactory {
         config.setSocketConfig(socketConfig);
 
         // Handshake-level gate: reject unauthenticated/expired/temp-only tokens outright.
+        // NOTE: netty-socketio 2.0.x's AuthorizationListener interface returns an
+        // AuthorizationResult object (not a plain boolean) via getAuthorizationResult(...).
         config.setAuthorizationListener(data -> {
             try {
                 String token = data.getSingleUrlParam("token");
-                if (token == null) return false;
+                if (token == null) return AuthorizationResult.FAILED_AUTHORIZATION;
                 Claims claims = jwtService.verify(token);
-                return !Boolean.TRUE.equals(claims.get("temp", Boolean.class));
+                boolean ok = !Boolean.TRUE.equals(claims.get("temp", Boolean.class));
+                return ok ? AuthorizationResult.SUCCESSFUL_AUTHORIZATION : AuthorizationResult.FAILED_AUTHORIZATION;
             } catch (Exception e) {
-                return false;
+                return AuthorizationResult.FAILED_AUTHORIZATION;
             }
         });
 
