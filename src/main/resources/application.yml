@@ -1,0 +1,58 @@
+server:
+  # SERVER_PORT is the REST API's internal port. Render (and most single-port PaaS)
+  # only exposes ONE public port per service — the bundled Dockerfile runs a small
+  # Nginx in front that binds Render's $PORT and routes /socket.io/* to the
+  # Socket.IO server and everything else here, so this can stay fixed at 5000.
+  port: ${SERVER_PORT:${PORT:5000}}
+
+spring:
+  application:
+    name: commengine
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/commengine}
+    username: ${DATABASE_USERNAME:}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    hibernate:
+      # Use `update` for local/dev convenience; prefer a migration tool (Flyway/Liquibase) in production.
+      ddl-auto: ${JPA_DDL_AUTO:update}
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+
+logging:
+  level:
+    root: INFO
+    com.commengine: ${LOG_LEVEL:INFO}
+
+app:
+  client-url: ${CLIENT_URL:*}
+  jwt:
+    secret: ${JWT_SECRET:change_me}
+    expires-in: ${JWT_EXPIRES_IN:30d}
+    temp-expires-in: ${JWT_TEMP_EXPIRES_IN:15m}
+  msg91:
+    auth-key: ${MSG91_AUTH_KEY:}
+  cloudinary:
+    cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+    api-key: ${CLOUDINARY_API_KEY:}
+    api-secret: ${CLOUDINARY_API_SECRET:}
+  agora:
+    app-id: ${AGORA_APP_ID:}
+    app-certificate: ${AGORA_APP_CERTIFICATE:}
+    token-expiry-seconds: ${AGORA_TOKEN_EXPIRY_SECONDS:3600}
+  socketio:
+    host: ${SOCKETIO_HOST:0.0.0.0}
+    port: ${SOCKETIO_PORT:5001}
