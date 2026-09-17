@@ -15,7 +15,7 @@ RUN mvn -q -B clean package -DskipTests
 FROM eclipse-temurin:17-jre-jammy
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nginx gettext-base \
+    && apt-get install -y --no-install-recommends nginx gettext-base curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
