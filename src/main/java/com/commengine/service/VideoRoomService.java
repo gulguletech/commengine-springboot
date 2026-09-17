@@ -26,6 +26,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+// See AudioRoomService for why this class-level readOnly transaction is required
+// (open-in-view=false + lazy relations mapped by DtoMapper after the repository call).
+@Transactional(readOnly = true)
 public class VideoRoomService {
 
     private final VideoRoomRepository roomRepository;
@@ -35,8 +38,8 @@ public class VideoRoomService {
     private final SocketIOServer socketIOServer;
 
     public VideoRoomService(VideoRoomRepository roomRepository, VideoRoomViewerRepository viewerRepository,
-                             VideoRoomCommentRepository commentRepository, AgoraService agoraService,
-                             SocketIOServer socketIOServer) {
+                            VideoRoomCommentRepository commentRepository, AgoraService agoraService,
+                            SocketIOServer socketIOServer) {
         this.roomRepository = roomRepository;
         this.viewerRepository = viewerRepository;
         this.commentRepository = commentRepository;

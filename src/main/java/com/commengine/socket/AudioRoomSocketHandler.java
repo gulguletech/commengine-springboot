@@ -34,7 +34,7 @@ public class AudioRoomSocketHandler {
     private SocketIOServer server;
 
     public AudioRoomSocketHandler(SocketUserResolver userResolver, AudioRoomRepository audioRoomRepository,
-                                   AudioRoomMemberRepository memberRepository, AudioRoomLiveState state) {
+                                  AudioRoomMemberRepository memberRepository, AudioRoomLiveState state) {
         this.userResolver = userResolver;
         this.audioRoomRepository = audioRoomRepository;
         this.memberRepository = memberRepository;
@@ -152,10 +152,14 @@ public class AudioRoomSocketHandler {
 
                 Seat[] seats = state.getSeats(payload.getRoomId());
                 synchronized (state) {
-                    if (seats[seatIndex] != null) {
+                    Seat occupant = seats[seatIndex];
+                    if (occupant != null && !occupant.userId.equals(user.getId())) {
                         ackFail(ackRequest, "Seat is already taken");
                         return;
                     }
+                    // occupant == null -> free seat; occupant.userId == user.getId() -> the
+                    // caller already holds this seat (e.g. a retried/duplicate emit after a
+                    // reconnect) — treat both as success instead of failing on your own seat.
                     state.clearUserFromRoom(payload.getRoomId(), user.getId());
                     seats[seatIndex] = new Seat(user.getId(), user.getName(), user.getAvatarUrl(), true);
                 }

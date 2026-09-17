@@ -19,6 +19,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+// See AudioRoomService for why this class-level readOnly transaction is required
+// (open-in-view=false + lazy relations mapped by DtoMapper after the repository call).
+@Transactional(readOnly = true)
 public class FriendService {
 
     private final FriendRequestRepository friendRequestRepository;
@@ -26,7 +29,7 @@ public class FriendService {
     private final SocketIOServer socketIOServer;
 
     public FriendService(FriendRequestRepository friendRequestRepository, UserRepository userRepository,
-                          SocketIOServer socketIOServer) {
+                         SocketIOServer socketIOServer) {
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
         this.socketIOServer = socketIOServer;

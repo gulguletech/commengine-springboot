@@ -22,6 +22,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+// See AudioRoomService for why this class-level readOnly transaction is required
+// (open-in-view=false + lazy relations mapped by DtoMapper after the repository call).
+@Transactional(readOnly = true)
 public class ChatService {
 
     private final ConversationRepository conversationRepository;
@@ -30,7 +33,7 @@ public class ChatService {
     private final SocketIOServer socketIOServer;
 
     public ChatService(ConversationRepository conversationRepository, MessageRepository messageRepository,
-                        UserRepository userRepository, SocketIOServer socketIOServer) {
+                       UserRepository userRepository, SocketIOServer socketIOServer) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.userRepository = userRepository;

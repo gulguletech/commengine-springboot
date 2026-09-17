@@ -15,6 +15,9 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+// Not strictly required today (User has no lazy relations in its DTO shapes), but added
+// for consistency and to guard against future lazy fields — see AudioRoomService for why.
+@Transactional(readOnly = true)
 public class UserService {
 
     private final UserRepository userRepository;

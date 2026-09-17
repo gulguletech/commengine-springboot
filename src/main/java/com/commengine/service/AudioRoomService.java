@@ -22,6 +22,12 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+// Class-level readOnly transaction: with spring.jpa.open-in-view=false, the Hibernate
+// session closes as soon as a repository call returns, so any method here that maps a
+// LAZY relation (host, sender, user, etc.) via DtoMapper AFTER the repository call would
+// otherwise throw LazyInitializationException. Write methods below carry their own
+// non-read-only @Transactional, which correctly overrides this class-level default.
+@Transactional(readOnly = true)
 public class AudioRoomService {
 
     private final AudioRoomRepository roomRepository;
@@ -31,8 +37,8 @@ public class AudioRoomService {
     private final SocketIOServer socketIOServer;
 
     public AudioRoomService(AudioRoomRepository roomRepository, AudioRoomMemberRepository memberRepository,
-                             AudioJoinRequestRepository joinRequestRepository, AgoraService agoraService,
-                             SocketIOServer socketIOServer) {
+                            AudioJoinRequestRepository joinRequestRepository, AgoraService agoraService,
+                            SocketIOServer socketIOServer) {
         this.roomRepository = roomRepository;
         this.memberRepository = memberRepository;
         this.joinRequestRepository = joinRequestRepository;
