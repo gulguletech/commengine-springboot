@@ -44,6 +44,13 @@ public class AudioRoomLiveState {
         return idx;
     }
 
+    /** Called when a room ends entirely — drops its seat/member maps so they don't
+     *  accumulate in memory forever for rooms that will never be revisited. */
+    public synchronized void removeRoom(String roomId) {
+        seatsByRoom.remove(roomId);
+        membersByRoom.remove(roomId);
+    }
+
     /** Iterates every room a user might be seated in (used on disconnect). */
     public java.util.Map<String, Seat[]> allSeats() {
         return seatsByRoom;

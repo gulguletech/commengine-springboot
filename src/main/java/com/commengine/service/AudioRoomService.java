@@ -8,6 +8,7 @@ import com.commengine.entity.*;
 import com.commengine.repository.AudioJoinRequestRepository;
 import com.commengine.repository.AudioRoomMemberRepository;
 import com.commengine.repository.AudioRoomRepository;
+import com.commengine.socket.AudioRoomLiveState;
 import com.commengine.util.AgoraUidUtil;
 import com.corundumstudio.socketio.SocketIOServer;
 import org.springframework.http.HttpStatus;
@@ -34,15 +35,18 @@ public class AudioRoomService {
     private final AudioRoomMemberRepository memberRepository;
     private final AudioJoinRequestRepository joinRequestRepository;
     private final AgoraService agoraService;
-    private final SocketIOServer socketIOServer;
+    private SocketIOServer socketIOServer;
+    private final AudioRoomLiveState liveState;
 
     public AudioRoomService(AudioRoomRepository roomRepository, AudioRoomMemberRepository memberRepository,
                             AudioJoinRequestRepository joinRequestRepository, AgoraService agoraService,
-                            SocketIOServer socketIOServer) {
+                            SocketIOServer socketIOServer, AudioRoomLiveState liveState) {
         this.roomRepository = roomRepository;
         this.memberRepository = memberRepository;
         this.joinRequestRepository = joinRequestRepository;
         this.agoraService = agoraService;
+        this.socketIOServer = socketIOServer;
+        this.liveState = liveState;
         this.socketIOServer = socketIOServer;
     }
 
@@ -231,16 +235,21 @@ public class AudioRoomService {
         if (!room.getHost().getId().equals(host.getId())) {
             throw ApiException.forbidden("Only the host can end the room");
         }
-        room.setStatus(RoomStatus.ENDED);
-        room.setEndedAt(Instant.now());
-        roomRepository.save(room);
 
-        List<AudioRoomMember> active = memberRepository.findByRoomIdAndLeftAtIsNull(id);
-        Instant now = Instant.now();
-        active.forEach(m -> m.setLeftAt(now));
-        memberRepository.saveAll(active);
-
+        // Notify everyone still connected BEFORE the data disappears underneath them.
         socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:room-ended", Map.of("roomId", room.getId()));
+
+        // A room that has ended has no further use — hard-delete it and everything tied
+        // to it (members, join requests) instead of soft-marking it ENDED and leaving
+        // the rows around forever with nothing in the app ever reading them again.
+        // Children are deleted first to satisfy the foreign key constraints.
+        joinRequestRepository.deleteAllByRoomId(id);
+        memberRepository.deleteAllByRoomId(id);
+        roomRepository.delete(room);
+
+        // Drop the in-memory seat/presence state too, or it would otherwise sit around
+        // in the JVM's memory for the lifetime of the process for a room that no longer exists.
+        liveState.removeRoom(id);
     }
 
     // ---- helpers ----

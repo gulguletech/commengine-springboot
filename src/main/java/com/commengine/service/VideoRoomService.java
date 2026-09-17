@@ -133,11 +133,16 @@ public class VideoRoomService {
         if (!room.getHost().getId().equals(host.getId())) {
             throw ApiException.forbidden("Only the host can end the stream");
         }
-        room.setStatus(RoomStatus.ENDED);
-        room.setEndedAt(Instant.now());
-        roomRepository.save(room);
 
+        // Notify everyone still connected BEFORE the data disappears underneath them.
         socketIOServer.getRoomOperations("video-room:" + room.getId()).sendEvent("video:room-ended", Map.of("roomId", room.getId()));
+
+        // A stream that has ended has no further use — hard-delete it and everything
+        // tied to it (viewers, comments) instead of soft-marking it ENDED and leaving
+        // the rows around forever with nothing in the app ever reading them again.
+        commentRepository.deleteAllByRoomId(id);
+        viewerRepository.deleteAllByRoomId(id);
+        roomRepository.delete(room);
     }
 
     public Map<String, Object> getComments(String id, Integer limitParam) {
