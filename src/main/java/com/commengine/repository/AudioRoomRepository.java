@@ -10,8 +10,10 @@ import java.util.List;
 
 public interface AudioRoomRepository extends JpaRepository<AudioRoom, String> {
 
-    @Query("select distinct r from AudioRoom r left join AudioRoomMember m on m.room = r and m.leftAt is null " +
-           "where r.status = :status and (r.type = com.commengine.entity.RoomType.PUBLIC or r.host.id = :userId or m.user.id = :userId) " +
-           "order by r.createdAt desc")
+    // Both PUBLIC and PRIVATE rooms are listed for everyone — PRIVATE rooms are still
+    // publicly discoverable, they just require the correct passcode at join time
+    // (enforced in AudioRoomService#joinRoom). The unused `userId` param is kept so
+    // the calling code doesn't need to change.
+    @Query("select r from AudioRoom r where r.status = :status order by r.createdAt desc")
     List<AudioRoom> findVisibleRooms(@Param("status") RoomStatus status, @Param("userId") String userId);
 }

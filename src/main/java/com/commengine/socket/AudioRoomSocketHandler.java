@@ -50,6 +50,7 @@ public class AudioRoomSocketHandler {
         server.addEventListener("audio:invite-to-seat", InviteToSeatPayload.class, onInviteToSeat());
         server.addEventListener("audio:leave-seat", RoomIdPayload.class, onLeaveSeat());
         server.addEventListener("audio:remove-from-seat", RemoveFromSeatPayload.class, onRemoveFromSeat());
+        server.addEventListener("audio:kick-member", RemoveFromSeatPayload.class, onKickMember());
         server.addEventListener("audio:toggle-mute", ToggleMutePayload.class, onToggleMute());
         server.addEventListener("audio:speaking", SpeakingPayload.class, onSpeaking());
         server.addEventListener("audio:send-chat", TextPayload.class, onSendChat());
@@ -303,6 +304,63 @@ public class AudioRoomSocketHandler {
             } catch (Exception e) {
                 log.error("audio:remove-from-seat error", e);
                 ackFail(ackRequest, "Failed to remove from seat");
+            }
+        };
+    }
+
+    /**
+     * Host-only: fully removes someone from the room (not just their seat) — they stop
+     * being an active member entirely, unlike audio:remove-from-seat which only demotes
+     * them back to LISTENER. They CAN rejoin afterwards (this isn't a ban), matching the
+     * simple "kick" behavior described for this app rather than a permanent block.
+     */
+    private DataListener<RemoveFromSeatPayload> onKickMember() {
+        return (client, payload, ackRequest) -> {
+            try {
+                User user = userResolver.currentUser(client);
+                if (user == null) { ackFail(ackRequest, "Not authenticated"); return; }
+                AudioRoom room = audioRoomRepository.findById(payload.getRoomId()).orElse(null);
+                if (room == null) { ackFail(ackRequest, "Room not found"); return; }
+                if (!room.getHost().getId().equals(user.getId())) {
+                    ackFail(ackRequest, "Only the host can remove someone from the room");
+                    return;
+                }
+                if (room.getHost().getId().equals(payload.getUserId())) {
+                    ackFail(ackRequest, "The host can't be removed");
+                    return;
+                }
+
+                int seatIdx = state.clearUserFromRoom(payload.getRoomId(), payload.getUserId());
+                state.getMembers(payload.getRoomId()).remove(payload.getUserId());
+
+                memberRepository.findByRoomIdAndUserId(payload.getRoomId(), payload.getUserId())
+                        .filter(m -> m.getLeftAt() == null)
+                        .ifPresent(m -> { m.setLeftAt(Instant.now()); memberRepository.save(m); });
+
+                if (seatIdx != -1) {
+                    Map<String, Object> seatsMsg = new LinkedHashMap<>();
+                    seatsMsg.put("roomId", payload.getRoomId());
+                    seatsMsg.put("seats", state.getSeats(payload.getRoomId()));
+                    server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:seats-update", seatsMsg);
+                }
+
+                Map<String, Object> leftMsg = new LinkedHashMap<>();
+                leftMsg.put("roomId", payload.getRoomId());
+                leftMsg.put("userId", payload.getUserId());
+                server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:member-left", leftMsg);
+                broadcastMemberCount(server, payload.getRoomId());
+
+                // Personal notification so the kicked user's own client can show an
+                // alert and navigate out of the room screen (they stay connected to
+                // the socket server overall — only removed from this specific room).
+                Map<String, Object> kicked = new LinkedHashMap<>();
+                kicked.put("roomId", payload.getRoomId());
+                server.getRoomOperations("user:" + payload.getUserId()).sendEvent("audio:kicked", kicked);
+
+                ackOk(ackRequest);
+            } catch (Exception e) {
+                log.error("audio:kick-member error", e);
+                ackFail(ackRequest, "Failed to remove from room");
             }
         };
     }
