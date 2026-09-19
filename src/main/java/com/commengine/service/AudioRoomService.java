@@ -77,8 +77,8 @@ public class AudioRoomService {
         return data;
     }
 
-    public Map<String, Object> listRooms(User user) {
-        List<AudioRoom> rooms = roomRepository.findVisibleRooms(RoomStatus.ACTIVE, user.getId());
+    public Map<String, Object> listRooms() {
+        List<AudioRoom> rooms = roomRepository.findVisibleRooms(RoomStatus.ACTIVE);
         List<Map<String, Object>> shaped = rooms.stream()
                 .map(r -> DtoMapper.audioRoomWithHostAndCount(r, memberRepository.findByRoomIdAndLeftAtIsNull(r.getId()).size()))
                 .toList();

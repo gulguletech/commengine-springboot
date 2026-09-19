@@ -30,8 +30,8 @@ public class AudioRoomController {
     }
 
     @GetMapping
-    public Object listRooms(@CurrentUser User user) {
-        return ApiResponse.ok(audioRoomService.listRooms(user));
+    public Object listRooms() {
+        return ApiResponse.ok(audioRoomService.listRooms());
     }
 
     @GetMapping("/{id}")
@@ -46,7 +46,7 @@ public class AudioRoomController {
 
     @PostMapping("/{id}/join")
     public Object joinRoom(@CurrentUser User user, @PathVariable String id,
-                            @RequestBody(required = false) JoinAudioRoomRequest body) {
+                           @RequestBody(required = false) JoinAudioRoomRequest body) {
         String passcode = body == null ? null : body.getPasscode();
         Map<String, Object> data = audioRoomService.joinRoom(user, id, passcode);
         String message = "PENDING".equals(data.get("status")) ? "Join request sent, waiting for host approval" : "Success";
@@ -61,7 +61,7 @@ public class AudioRoomController {
 
     @PatchMapping("/{id}/settings")
     public Object updateSettings(@CurrentUser User user, @PathVariable String id,
-                                  @Valid @RequestBody AudioRoomSettingsRequest body) {
+                                 @Valid @RequestBody AudioRoomSettingsRequest body) {
         return ApiResponse.ok(audioRoomService.updateSettings(user, id, body), "Room settings updated");
     }
 
@@ -78,7 +78,7 @@ public class AudioRoomController {
 
     @PostMapping("/{id}/join-requests/{requestId}/respond")
     public Object respondJoinRequest(@CurrentUser User user, @PathVariable String id, @PathVariable String requestId,
-                                      @Valid @RequestBody RespondRequest body) {
+                                     @Valid @RequestBody RespondRequest body) {
         Map<String, Object> data = audioRoomService.respondJoinRequest(user, id, requestId, Boolean.TRUE.equals(body.getAccept()));
         String status = String.valueOf(data.get("status"));
         return ApiResponse.ok(data, "Request " + status.toLowerCase());
