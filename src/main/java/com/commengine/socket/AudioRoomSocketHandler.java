@@ -105,7 +105,10 @@ public class AudioRoomSocketHandler {
             client.leaveRoom("audio-room:" + roomId);
             client.leaveRoom("audio-room:" + roomId + ":host");
             if (roomId.equals(client.get(CURRENT_ROOM_KEY))) {
-                client.set(CURRENT_ROOM_KEY, null);
+                // NOTE: netty-socketio's client store is backed by ConcurrentHashMap, which
+                // throws NullPointerException on a null value — set(key, null) is NOT a
+                // valid way to clear a key there (unlike a plain HashMap). Use del() instead.
+                client.del(CURRENT_ROOM_KEY);
             }
             int clearedIdx = state.clearUserFromRoom(roomId, user.getId());
             state.getMembers(roomId).remove(user.getId());
