@@ -20,7 +20,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 // Class-level readOnly transaction: with spring.jpa.open-in-view=false, the Hibernate
@@ -35,7 +34,7 @@ public class AudioRoomService {
     private final AudioRoomMemberRepository memberRepository;
     private final AudioJoinRequestRepository joinRequestRepository;
     private final AgoraService agoraService;
-    private SocketIOServer socketIOServer;
+    private final SocketIOServer socketIOServer;
     private final AudioRoomLiveState liveState;
 
     public AudioRoomService(AudioRoomRepository roomRepository, AudioRoomMemberRepository memberRepository,
@@ -47,7 +46,6 @@ public class AudioRoomService {
         this.agoraService = agoraService;
         this.socketIOServer = socketIOServer;
         this.liveState = liveState;
-        this.socketIOServer = socketIOServer;
     }
 
     @Transactional
@@ -83,7 +81,7 @@ public class AudioRoomService {
         List<AudioRoom> rooms = roomRepository.findVisibleRooms(RoomStatus.ACTIVE, user.getId());
         List<Map<String, Object>> shaped = rooms.stream()
                 .map(r -> DtoMapper.audioRoomWithHostAndCount(r, memberRepository.findByRoomIdAndLeftAtIsNull(r.getId()).size()))
-                .collect(Collectors.toList());
+                .toList();
         return Map.of("rooms", shaped);
     }
 
@@ -96,28 +94,37 @@ public class AudioRoomService {
     public Map<String, Object> getMembers(String id) {
         findRoomOrThrow(id);
         List<AudioRoomMember> members = memberRepository.findByRoomIdAndLeftAtIsNullOrderByJoinedAtAsc(id);
-        return Map.of("members", members.stream().map(DtoMapper::audioRoomMember).collect(Collectors.toList()));
+        return Map.of("members", members.stream().map(DtoMapper::audioRoomMember).toList());
     }
 
     @Transactional
     public Map<String, Object> joinRoom(User user, String id, String passcode) {
+        // Every audio-room participant is issued a PUBLISHER-capable Agora token, not just
+        // the host. Unlike a live video room, any listener here can be promoted to a
+        // speaker later via audio:take-seat. That handler does not reissue a new token —
+        // there is no mid-session token-renewal flow implemented. Actual permission to
+        // speak is fully enforced server-side by the seat/mute state broadcast over
+        // sockets, so granting broad publishing privilege in the token itself is safe.
+        // It's also what makes unmuting after taking a seat actually work: a
+        // subscriber-only token has no publishing-privilege bits at all, so Agora
+        // silently rejects the publish attempt regardless of the app's local UI/role state.
         AudioRoom room = roomRepository.findById(id).orElse(null);
         if (room == null || room.getStatus() != RoomStatus.ACTIVE) {
             throw ApiException.notFound("Room not found or ended");
         }
 
         if (room.getHost().getId().equals(user.getId())) {
-            return joinedResponse(room, user, "publisher");
+            return joinedResponse(room, user);
         }
 
         if (room.getType() == RoomType.PUBLIC) {
             upsertListenerMember(room, user);
-            return joinedResponse(room, user, "subscriber");
+            return joinedResponse(room, user);
         }
 
         AudioRoomMember existing = memberRepository.findByRoomIdAndUserId(id, user.getId()).orElse(null);
         if (existing != null && existing.getLeftAt() == null) {
-            return joinedResponse(room, user, "subscriber");
+            return joinedResponse(room, user);
         }
 
         if (room.getPasscode() != null) {
@@ -128,7 +135,7 @@ public class AudioRoomService {
                 throw new ApiException("Incorrect passcode", HttpStatus.UNAUTHORIZED, Map.of("code", "PASSCODE_INCORRECT"));
             }
             upsertListenerMember(room, user);
-            return joinedResponse(room, user, "subscriber");
+            return joinedResponse(room, user);
         }
 
         AudioJoinRequest joinRequest = joinRequestRepository.findByRoomIdAndUserId(id, user.getId()).orElse(null);
@@ -159,7 +166,7 @@ public class AudioRoomService {
             throw ApiException.forbidden("Only the host can view join requests");
         }
         List<AudioJoinRequest> requests = joinRequestRepository.findByRoomIdAndStatus(id, JoinRequestStatus.PENDING);
-        return Map.of("requests", requests.stream().map(DtoMapper::audioJoinRequest).collect(Collectors.toList()));
+        return Map.of("requests", requests.stream().map(DtoMapper::audioJoinRequest).toList());
     }
 
     @Transactional
@@ -181,7 +188,7 @@ public class AudioRoomService {
         if (accept) {
             upsertListenerMember(room, request.getUser());
             long uidNum = AgoraUidUtil.deriveAgoraUid(request.getUser().getId());
-            rtc = agoraService.generateRtcToken(room.getChannelName(), uidNum, "subscriber");
+            rtc = agoraService.generateRtcToken(room.getChannelName(), uidNum, "publisher");
         }
 
         Map<String, Object> notify = new LinkedHashMap<>();
@@ -272,9 +279,11 @@ public class AudioRoomService {
         memberRepository.save(member);
     }
 
-    private Map<String, Object> joinedResponse(AudioRoom room, User user, String role) {
+    // Always issues a publisher-capable token — see the comment on joinRoom() for why
+    // every audio-room participant needs one, not just the host.
+    private Map<String, Object> joinedResponse(AudioRoom room, User user) {
         long uidNum = AgoraUidUtil.deriveAgoraUid(user.getId());
-        Map<String, Object> rtc = agoraService.generateRtcToken(room.getChannelName(), uidNum, role);
+        Map<String, Object> rtc = agoraService.generateRtcToken(room.getChannelName(), uidNum, "publisher");
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("status", "JOINED");
         data.put("room", DtoMapper.audioRoomBase(room));
