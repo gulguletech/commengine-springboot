@@ -31,7 +31,8 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/health",
                         "/api/auth/verify-widget-token",
-                        "/api/auth/complete-profile"
+                        "/api/auth/complete-profile",
+                        "/api/admin/**" // protected by X-Admin-Key inside the controller
                 );
     }
 
