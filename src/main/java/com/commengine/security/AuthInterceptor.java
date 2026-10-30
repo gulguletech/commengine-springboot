@@ -24,6 +24,11 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
+        // Browser CORS preflight (OPTIONS) never carries the Authorization header. Let it through so
+        // Spring's CORS handling can answer it; otherwise web-based games get "Failed to fetch".
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
         String header = request.getHeader("Authorization");
         String token = (header != null && header.startsWith("Bearer ")) ? header.substring(7) : null;
         if (token == null) {
