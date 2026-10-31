@@ -14,8 +14,9 @@ spring:
     password: ${DATABASE_PASSWORD:}
   jpa:
     hibernate:
-      # Use `update` for local/dev convenience; prefer a migration tool (Flyway/Liquibase) in production.
-      ddl-auto: ${JPA_DDL_AUTO:update}
+      # Auto-create / update tables (wallets, wallet_transactions, game_bets, ...) on every startup.
+      # Hard-coded to `update` so a stray JPA_DDL_AUTO env var on the host can't turn it off.
+      ddl-auto: update
     open-in-view: false
     properties:
       hibernate:
