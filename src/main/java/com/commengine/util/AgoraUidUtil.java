@@ -17,7 +17,7 @@ public final class AgoraUidUtil {
             MessageDigest md5 = MessageDigest.getInstance("MD5");
             byte[] hash = md5.digest(userId.getBytes(StandardCharsets.UTF_8));
             long num = ByteBuffer.wrap(hash, 0, 4).getInt() & 0xFFFFFFFFL; // readUInt32BE(0)
-            return (num % 4294967294L) + 1L; // 1 .. 2^32-1
+            return (num % 2147483646L) + 1L; // 1 .. 2^31-1 (fits a signed int, so native SDKs never see a negative uid)
         } catch (Exception e) {
             throw new IllegalStateException("Failed to derive Agora uid", e);
         }

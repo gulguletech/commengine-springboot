@@ -165,7 +165,7 @@ public class AudioRoomSocketHandler {
                     // caller already holds this seat (e.g. a retried/duplicate emit after a
                     // reconnect) — treat both as success instead of failing on your own seat.
                     state.clearUserFromRoom(payload.getRoomId(), user.getId());
-                    seats[seatIndex] = new Seat(user.getId(), user.getName(), user.getAvatarUrl(), true);
+                    seats[seatIndex] = new Seat(user.getId(), user.getName(), user.getAvatarUrl(), false);
                 }
 
                 upsertMember(room, user, room.getHost().getId().equals(user.getId()) ? MemberRole.HOST : MemberRole.SPEAKER, true);

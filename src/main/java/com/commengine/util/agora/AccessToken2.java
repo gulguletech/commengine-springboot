@@ -66,10 +66,17 @@ public final class AccessToken2 {
         }
     }
 
+    /**
+     * Official AccessToken2 signing key:
+     *   step1 = HMAC-SHA256(key = issueTs bytes, message = appCertificate)
+     *   sign  = HMAC-SHA256(key = salt bytes,    message = step1)
+     * (key and message were previously swapped, which made Agora reject every token
+     * -> no audio, black video.)
+     */
     private byte[] signingKey() {
-        byte[] step1 = hmacSha256(appCertificate.getBytes(StandardCharsets.UTF_8),
-                new ByteBuf().putUint32(issueTs).pack());
-        return hmacSha256(step1, new ByteBuf().putUint32(salt).pack());
+        byte[] step1 = hmacSha256(new ByteBuf().putUint32(issueTs).pack(),
+                appCertificate.getBytes(StandardCharsets.UTF_8));
+        return hmacSha256(new ByteBuf().putUint32(salt).pack(), step1);
     }
 
     private byte[] packRtcService() {
