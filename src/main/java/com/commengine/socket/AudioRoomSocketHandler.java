@@ -4,6 +4,7 @@ import com.commengine.dto.DtoMapper;
 import com.commengine.entity.*;
 import com.commengine.repository.AudioRoomMemberRepository;
 import com.commengine.repository.AudioRoomRepository;
+import com.commengine.service.RoomPresenceService;
 import com.commengine.socket.payload.*;
 import com.corundumstudio.socketio.AckRequest;
 import com.corundumstudio.socketio.SocketIOClient;
@@ -31,14 +32,17 @@ public class AudioRoomSocketHandler {
     private final AudioRoomRepository audioRoomRepository;
     private final AudioRoomMemberRepository memberRepository;
     private final AudioRoomLiveState state;
+    private final RoomPresenceService presence;
     private SocketIOServer server;
 
     public AudioRoomSocketHandler(SocketUserResolver userResolver, AudioRoomRepository audioRoomRepository,
-                                  AudioRoomMemberRepository memberRepository, AudioRoomLiveState state) {
+                                  AudioRoomMemberRepository memberRepository, AudioRoomLiveState state,
+                                  RoomPresenceService presence) {
         this.userResolver = userResolver;
         this.audioRoomRepository = audioRoomRepository;
         this.memberRepository = memberRepository;
         this.state = state;
+        this.presence = presence;
     }
 
     public void register(SocketIOServer server) {
@@ -48,6 +52,7 @@ public class AudioRoomSocketHandler {
         server.addEventListener("audio:get-seats", RoomIdPayload.class, onGetSeats());
         server.addEventListener("audio:take-seat", TakeSeatPayload.class, onTakeSeat());
         server.addEventListener("audio:invite-to-seat", InviteToSeatPayload.class, onInviteToSeat());
+        server.addEventListener("audio:block-seat", BlockSeatPayload.class, onBlockSeat());
         server.addEventListener("audio:leave-seat", RoomIdPayload.class, onLeaveSeat());
         server.addEventListener("audio:remove-from-seat", RemoveFromSeatPayload.class, onRemoveFromSeat());
         server.addEventListener("audio:kick-member", RemoveFromSeatPayload.class, onKickMember());
@@ -80,6 +85,11 @@ public class AudioRoomSocketHandler {
                 }
                 client.set(CURRENT_ROOM_KEY, payload.getRoomId());
                 state.getMembers(payload.getRoomId()).add(user.getId());
+                if (room.getType() == RoomType.PUBLIC) {
+                    memberRepository.findByRoomIdAndUserId(payload.getRoomId(), user.getId())
+                            .filter(m -> m.getLeftAt() != null)
+                            .ifPresent(m -> { m.setLeftAt(null); memberRepository.save(m); });
+                }
 
                 Map<String, Object> joined = new LinkedHashMap<>();
                 joined.put("roomId", payload.getRoomId());
@@ -90,6 +100,7 @@ public class AudioRoomSocketHandler {
                 Map<String, Object> seatsMsg = new LinkedHashMap<>();
                 seatsMsg.put("roomId", payload.getRoomId());
                 seatsMsg.put("seats", state.getSeats(payload.getRoomId()));
+                seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                 client.sendEvent("audio:seats-update", seatsMsg);
             } catch (Exception e) {
                 log.error("audio:join-room-channel error", e);
@@ -101,30 +112,7 @@ public class AudioRoomSocketHandler {
         return (client, payload, ack) -> {
             User user = userResolver.currentUser(client);
             if (user == null || payload.getRoomId() == null) return;
-            String roomId = payload.getRoomId();
-            client.leaveRoom("audio-room:" + roomId);
-            client.leaveRoom("audio-room:" + roomId + ":host");
-            if (roomId.equals(client.get(CURRENT_ROOM_KEY))) {
-                // NOTE: netty-socketio's client store is backed by ConcurrentHashMap, which
-                // throws NullPointerException on a null value — set(key, null) is NOT a
-                // valid way to clear a key there (unlike a plain HashMap). Use del() instead.
-                client.del(CURRENT_ROOM_KEY);
-            }
-            int clearedIdx = state.clearUserFromRoom(roomId, user.getId());
-            state.getMembers(roomId).remove(user.getId());
-
-            Map<String, Object> left = new LinkedHashMap<>();
-            left.put("roomId", roomId);
-            left.put("userId", user.getId());
-            server.getRoomOperations("audio-room:" + roomId).sendEvent("audio:member-left", left);
-            broadcastMemberCount(server, roomId);
-
-            if (clearedIdx != -1) {
-                Map<String, Object> seatsMsg = new LinkedHashMap<>();
-                seatsMsg.put("roomId", roomId);
-                seatsMsg.put("seats", state.getSeats(roomId));
-                server.getRoomOperations("audio-room:" + roomId).sendEvent("audio:seats-update", seatsMsg);
-            }
+            presence.leaveAudioRoom(user.getId(), payload.getRoomId());
         };
     }
 
@@ -134,6 +122,7 @@ public class AudioRoomSocketHandler {
             Map<String, Object> seatsMsg = new LinkedHashMap<>();
             seatsMsg.put("roomId", payload.getRoomId());
             seatsMsg.put("seats", state.getSeats(payload.getRoomId()));
+            seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
             client.sendEvent("audio:seats-update", seatsMsg);
         };
     }
@@ -156,6 +145,10 @@ public class AudioRoomSocketHandler {
 
                 Seat[] seats = state.getSeats(payload.getRoomId());
                 synchronized (state) {
+                    if (state.getBlocked(payload.getRoomId())[seatIndex]) {
+                        ackFail(ackRequest, "This seat is locked by the host");
+                        return;
+                    }
                     Seat occupant = seats[seatIndex];
                     if (occupant != null && !occupant.userId.equals(user.getId())) {
                         ackFail(ackRequest, "Seat is already taken");
@@ -173,6 +166,7 @@ public class AudioRoomSocketHandler {
                 Map<String, Object> seatsMsg = new LinkedHashMap<>();
                 seatsMsg.put("roomId", payload.getRoomId());
                 seatsMsg.put("seats", seats);
+                seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                 server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:seats-update", seatsMsg);
 
                 if (ackRequest.isAckRequested()) {
@@ -205,8 +199,24 @@ public class AudioRoomSocketHandler {
                     return;
                 }
                 Seat[] seats = state.getSeats(payload.getRoomId());
+                if (state.getBlocked(payload.getRoomId())[seatIndex]) {
+                    ackFail(ackRequest, "That seat is locked - unlock it first");
+                    return;
+                }
                 if (seats[seatIndex] != null) {
                     ackFail(ackRequest, "That seat is already taken");
+                    return;
+                }
+                if (payload.getUserId() == null || payload.getUserId().equals(user.getId())) {
+                    ackFail(ackRequest, "Pick someone from the room to invite");
+                    return;
+                }
+                if (!state.getMembers(payload.getRoomId()).contains(payload.getUserId())) {
+                    ackFail(ackRequest, "That person is no longer in the room");
+                    return;
+                }
+                if (state.findSeatIndexByUser(payload.getRoomId(), payload.getUserId()) != -1) {
+                    ackFail(ackRequest, "That person is already on a seat");
                     return;
                 }
 
@@ -214,12 +224,63 @@ public class AudioRoomSocketHandler {
                 invite.put("roomId", payload.getRoomId());
                 invite.put("seatIndex", seatIndex);
                 invite.put("host", DtoMapper.userBrief(user));
+                invite.put("roomTitle", room.getTitle());
                 server.getRoomOperations("user:" + payload.getUserId()).sendEvent("audio:seat-invite", invite);
 
                 ackOk(ackRequest);
             } catch (Exception e) {
                 log.error("audio:invite-to-seat error", e);
                 ackFail(ackRequest, "Failed to send invite");
+            }
+        };
+    }
+
+    /** Host-only: lock / unlock a seat. Locking an occupied seat sends the person back to the audience. */
+    private DataListener<BlockSeatPayload> onBlockSeat() {
+        return (client, payload, ackRequest) -> {
+            try {
+                User user = userResolver.currentUser(client);
+                if (user == null) { ackFail(ackRequest, "Not authenticated"); return; }
+                AudioRoom room = audioRoomRepository.findById(payload.getRoomId()).orElse(null);
+                if (room == null) { ackFail(ackRequest, "Room not found"); return; }
+                if (!room.getHost().getId().equals(user.getId())) {
+                    ackFail(ackRequest, "Only the host can lock seats");
+                    return;
+                }
+                Integer idx = payload.getSeatIndex();
+                if (idx == null || idx < 0 || idx >= AudioRoomLiveState.SEAT_COUNT) {
+                    ackFail(ackRequest, "Invalid seat index");
+                    return;
+                }
+                boolean block = Boolean.TRUE.equals(payload.getBlocked());
+                String roomId = payload.getRoomId();
+                Seat kickedSeat = null;
+                synchronized (state) {
+                    state.getBlocked(roomId)[idx] = block;
+                    Seat[] seats = state.getSeats(roomId);
+                    if (block && seats[idx] != null) {
+                        kickedSeat = seats[idx];
+                        seats[idx] = null;
+                    }
+                }
+                if (kickedSeat != null) {
+                    final String kickedId = kickedSeat.userId;
+                    memberRepository.findByRoomIdAndUserId(roomId, kickedId)
+                            .filter(m -> m.getLeftAt() == null)
+                            .ifPresent(m -> { m.setRole(MemberRole.LISTENER); m.setMuted(true); memberRepository.save(m); });
+                    Map<String, Object> removed = new LinkedHashMap<>();
+                    removed.put("roomId", roomId);
+                    server.getRoomOperations("user:" + kickedId).sendEvent("audio:removed-from-seat", removed);
+                }
+                Map<String, Object> seatsMsg = new LinkedHashMap<>();
+                seatsMsg.put("roomId", roomId);
+                seatsMsg.put("seats", state.getSeats(roomId));
+                seatsMsg.put("blockedSeats", state.getBlocked(roomId));
+                server.getRoomOperations("audio-room:" + roomId).sendEvent("audio:seats-update", seatsMsg);
+                ackOk(ackRequest);
+            } catch (Exception e) {
+                log.error("audio:block-seat error", e);
+                ackFail(ackRequest, "Failed to update the seat");
             }
         };
     }
@@ -247,6 +308,7 @@ public class AudioRoomSocketHandler {
                 Map<String, Object> seatsMsg = new LinkedHashMap<>();
                 seatsMsg.put("roomId", payload.getRoomId());
                 seatsMsg.put("seats", seats);
+                seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                 server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:seats-update", seatsMsg);
 
                 if (ackRequest.isAckRequested()) {
@@ -292,6 +354,7 @@ public class AudioRoomSocketHandler {
                 Map<String, Object> seatsMsg = new LinkedHashMap<>();
                 seatsMsg.put("roomId", payload.getRoomId());
                 seatsMsg.put("seats", seats);
+                seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                 server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:seats-update", seatsMsg);
 
                 Map<String, Object> removed = new LinkedHashMap<>();
@@ -344,6 +407,7 @@ public class AudioRoomSocketHandler {
                     Map<String, Object> seatsMsg = new LinkedHashMap<>();
                     seatsMsg.put("roomId", payload.getRoomId());
                     seatsMsg.put("seats", state.getSeats(payload.getRoomId()));
+                    seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                     server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:seats-update", seatsMsg);
                 }
 
@@ -393,6 +457,7 @@ public class AudioRoomSocketHandler {
                     Map<String, Object> seatsMsg = new LinkedHashMap<>();
                     seatsMsg.put("roomId", payload.getRoomId());
                     seatsMsg.put("seats", seats);
+                    seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                     server.getRoomOperations("audio-room:" + payload.getRoomId()).sendEvent("audio:seats-update", seatsMsg);
                 }
             } catch (Exception e) {
@@ -444,29 +509,12 @@ public class AudioRoomSocketHandler {
 
     private DisconnectListener disconnectCleanup() {
         return client -> {
-            User user = userResolver.currentUser(client);
-            if (user == null) return;
-            for (Map.Entry<String, Seat[]> entry : state.allSeats().entrySet()) {
-                String roomId = entry.getKey();
-                Seat[] seats = entry.getValue();
-                int idx = state.findSeatIndexByUser(roomId, user.getId());
-                if (idx != -1) {
-                    seats[idx] = null;
-                    Map<String, Object> seatsMsg = new LinkedHashMap<>();
-                    seatsMsg.put("roomId", roomId);
-                    seatsMsg.put("seats", seats);
-                    server.getRoomOperations("audio-room:" + roomId).sendEvent("audio:seats-update", seatsMsg);
-                }
-            }
-            for (Map.Entry<String, java.util.Set<String>> entry : state.allMembers().entrySet()) {
-                String roomId = entry.getKey();
-                if (entry.getValue().remove(user.getId())) {
-                    Map<String, Object> left = new LinkedHashMap<>();
-                    left.put("roomId", roomId);
-                    left.put("userId", user.getId());
-                    server.getRoomOperations("audio-room:" + roomId).sendEvent("audio:member-left", left);
-                    broadcastMemberCount(server, roomId);
-                }
+            try {
+                User user = userResolver.currentUser(client);
+                if (user == null) return;
+                presence.handleDisconnect(user.getId(), client.getSessionId());
+            } catch (Exception e) {
+                log.error("disconnect cleanup error", e);
             }
         };
     }

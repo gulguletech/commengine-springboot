@@ -18,6 +18,17 @@ public class AudioRoomLiveState {
 
     private final ConcurrentHashMap<String, Seat[]> seatsByRoom = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> membersByRoom = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, boolean[]> blockedByRoom = new ConcurrentHashMap<>();
+
+    /** true = the host has locked that seat. */
+    public boolean[] getBlocked(String roomId) {
+        return blockedByRoom.computeIfAbsent(roomId, k -> new boolean[SEAT_COUNT]);
+    }
+
+    /** Non-creating lookup (used by cleanup code so it never resurrects an ended room). */
+    public Set<String> peekMembers(String roomId) {
+        return membersByRoom.get(roomId);
+    }
 
     public Seat[] getSeats(String roomId) {
         return seatsByRoom.computeIfAbsent(roomId, k -> new Seat[SEAT_COUNT]);
@@ -49,6 +60,7 @@ public class AudioRoomLiveState {
     public synchronized void removeRoom(String roomId) {
         seatsByRoom.remove(roomId);
         membersByRoom.remove(roomId);
+        blockedByRoom.remove(roomId);
     }
 
     /** Iterates every room a user might be seated in (used on disconnect). */

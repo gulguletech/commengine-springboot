@@ -36,16 +36,19 @@ public class AudioRoomService {
     private final AgoraService agoraService;
     private final SocketIOServer socketIOServer;
     private final AudioRoomLiveState liveState;
+    private final RoomPresenceService presence;
 
     public AudioRoomService(AudioRoomRepository roomRepository, AudioRoomMemberRepository memberRepository,
                             AudioJoinRequestRepository joinRequestRepository, AgoraService agoraService,
-                            SocketIOServer socketIOServer, AudioRoomLiveState liveState) {
+                            SocketIOServer socketIOServer, AudioRoomLiveState liveState,
+                            RoomPresenceService presence) {
         this.roomRepository = roomRepository;
         this.memberRepository = memberRepository;
         this.joinRequestRepository = joinRequestRepository;
         this.agoraService = agoraService;
         this.socketIOServer = socketIOServer;
         this.liveState = liveState;
+        this.presence = presence;
     }
 
     @Transactional
@@ -74,6 +77,8 @@ public class AudioRoomService {
         roomJson.put("members", List.of(bareMember(hostMember)));
         data.put("room", roomJson);
         data.put("rtc", rtc);
+        // one room at a time: starting a room exits any other room the host was in
+        presence.leaveOthers(host.getId(), "audio", room.getId());
         return data;
     }
 
@@ -99,6 +104,16 @@ public class AudioRoomService {
 
     @Transactional
     public Map<String, Object> joinRoom(User user, String id, String passcode) {
+        Map<String, Object> result = joinRoomInternal(user, id, passcode);
+        // one room at a time: once the join really succeeded (not just a pending request),
+        // drop the user from any other audio/video room they were in.
+        if (result.containsKey("rtc")) {
+            presence.leaveOthers(user.getId(), "audio", id);
+        }
+        return result;
+    }
+
+    private Map<String, Object> joinRoomInternal(User user, String id, String passcode) {
         // Every audio-room participant is issued a PUBLISHER-capable Agora token, not just
         // the host. Unlike a live video room, any listener here can be promoted to a
         // speaker later via audio:take-seat. That handler does not reissue a new token —
@@ -228,12 +243,7 @@ public class AudioRoomService {
 
     @Transactional
     public void leaveRoom(User user, String id) {
-        memberRepository.findByRoomIdAndUserId(id, user.getId())
-                .filter(m -> m.getLeftAt() == null)
-                .ifPresent(m -> { m.setLeftAt(Instant.now()); memberRepository.save(m); });
-
-        Map<String, Object> notify = Map.of("userId", user.getId());
-        socketIOServer.getRoomOperations("audio-room:" + id).sendEvent("audio:member-left", notify);
+        presence.leaveAudioRoom(user.getId(), id);
     }
 
     @Transactional

@@ -28,13 +28,16 @@ public class VideoRoomSocketHandler {
     private final SocketUserResolver userResolver;
     private final VideoRoomRepository videoRoomRepository;
     private final VideoRoomCommentRepository commentRepository;
+    private final com.commengine.service.RoomPresenceService presence;
     private SocketIOServer server;
 
     public VideoRoomSocketHandler(SocketUserResolver userResolver, VideoRoomRepository videoRoomRepository,
-                                   VideoRoomCommentRepository commentRepository) {
+                                   VideoRoomCommentRepository commentRepository,
+                                   com.commengine.service.RoomPresenceService presence) {
         this.userResolver = userResolver;
         this.videoRoomRepository = videoRoomRepository;
         this.commentRepository = commentRepository;
+        this.presence = presence;
     }
 
     public void register(SocketIOServer server) {
@@ -48,12 +51,9 @@ public class VideoRoomSocketHandler {
         return (client, payload, ack) -> {
             User user = userResolver.currentUser(client);
             if (user == null || payload.getRoomId() == null) return;
+            // only subscribes this socket to the room's events; the viewer count is
+            // broadcast by the REST join/leave (RoomPresenceService) so it is never double counted
             client.joinRoom("video-room:" + payload.getRoomId());
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("roomId", payload.getRoomId());
-            data.put("userId", user.getId());
-            data.put("name", user.getName());
-            server.getRoomOperations("video-room:" + payload.getRoomId()).sendEvent("video:viewer-joined", data);
         };
     }
 
@@ -61,11 +61,7 @@ public class VideoRoomSocketHandler {
         return (client, payload, ack) -> {
             User user = userResolver.currentUser(client);
             if (user == null || payload.getRoomId() == null) return;
-            client.leaveRoom("video-room:" + payload.getRoomId());
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("roomId", payload.getRoomId());
-            data.put("userId", user.getId());
-            server.getRoomOperations("video-room:" + payload.getRoomId()).sendEvent("video:viewer-left", data);
+            presence.leaveVideoRoom(user.getId(), payload.getRoomId());
         };
     }
 

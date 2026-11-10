@@ -6,10 +6,13 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface VideoRoomViewerRepository extends JpaRepository<VideoRoomViewer, String> {
     Optional<VideoRoomViewer> findByRoomIdAndUserId(String roomId, String userId);
+    List<VideoRoomViewer> findByUserIdAndLeftAtIsNull(String userId);
+    long countByRoomIdAndLeftAtIsNull(String roomId);
 
     @Modifying
     @Query("delete from VideoRoomViewer v where v.room.id = :roomId")

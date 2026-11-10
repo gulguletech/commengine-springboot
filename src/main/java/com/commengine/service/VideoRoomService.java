@@ -36,15 +36,17 @@ public class VideoRoomService {
     private final VideoRoomCommentRepository commentRepository;
     private final AgoraService agoraService;
     private final SocketIOServer socketIOServer;
+    private final RoomPresenceService presence;
 
     public VideoRoomService(VideoRoomRepository roomRepository, VideoRoomViewerRepository viewerRepository,
                             VideoRoomCommentRepository commentRepository, AgoraService agoraService,
-                            SocketIOServer socketIOServer) {
+                            SocketIOServer socketIOServer, RoomPresenceService presence) {
         this.roomRepository = roomRepository;
         this.viewerRepository = viewerRepository;
         this.commentRepository = commentRepository;
         this.agoraService = agoraService;
         this.socketIOServer = socketIOServer;
+        this.presence = presence;
     }
 
     @Transactional
@@ -62,6 +64,7 @@ public class VideoRoomService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("room", DtoMapper.videoRoom(room));
         data.put("rtc", rtc);
+        presence.leaveOthers(host.getId(), "video", room.getId());
         return data;
     }
 
@@ -87,11 +90,12 @@ public class VideoRoomService {
         long uidNum = AgoraUidUtil.deriveAgoraUid(user.getId());
         Map<String, Object> rtc = agoraService.generateRtcToken(room.getChannelName(), uidNum, role);
 
+        // one room at a time (must run before we register this user as a viewer here)
+        presence.leaveOthers(user.getId(), "video", id);
+
         if (!isHost) {
             VideoRoomViewer viewer = viewerRepository.findByRoomIdAndUserId(id, user.getId()).orElse(null);
             if (viewer == null) {
-                room.setViewerCount(room.getViewerCount() + 1);
-                roomRepository.save(room);
                 viewer = new VideoRoomViewer();
                 viewer.setRoom(room);
                 viewer.setUser(user);
@@ -100,11 +104,10 @@ public class VideoRoomService {
                 viewer.setLeftAt(null);
                 viewerRepository.save(viewer);
             }
-
-            Map<String, Object> notify = new LinkedHashMap<>();
-            notify.put("userId", user.getId());
-            notify.put("name", user.getName());
-            socketIOServer.getRoomOperations("video-room:" + room.getId()).sendEvent("video:viewer-joined", notify);
+            long count = viewerRepository.countByRoomIdAndLeftAtIsNull(id);
+            room.setViewerCount((int) count);
+            roomRepository.save(room);
+            presence.broadcastViewerCount(id, count);
         }
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -115,16 +118,7 @@ public class VideoRoomService {
 
     @Transactional
     public void leaveRoom(User user, String id) {
-        VideoRoomViewer viewer = viewerRepository.findByRoomIdAndUserId(id, user.getId()).orElse(null);
-        if (viewer != null && viewer.getLeftAt() == null) {
-            viewer.setLeftAt(Instant.now());
-            viewerRepository.save(viewer);
-            roomRepository.findById(id).ifPresent(room -> {
-                room.setViewerCount(Math.max(0, room.getViewerCount() - 1));
-                roomRepository.save(room);
-            });
-        }
-        socketIOServer.getRoomOperations("video-room:" + id).sendEvent("video:viewer-left", Map.of("userId", user.getId()));
+        presence.leaveVideoRoom(user.getId(), id);
     }
 
     @Transactional

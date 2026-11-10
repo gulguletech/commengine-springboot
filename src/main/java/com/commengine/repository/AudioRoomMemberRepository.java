@@ -13,6 +13,7 @@ public interface AudioRoomMemberRepository extends JpaRepository<AudioRoomMember
     Optional<AudioRoomMember> findByRoomIdAndUserId(String roomId, String userId);
     List<AudioRoomMember> findByRoomIdAndLeftAtIsNullOrderByJoinedAtAsc(String roomId);
     List<AudioRoomMember> findByRoomIdAndLeftAtIsNull(String roomId);
+    List<AudioRoomMember> findByUserIdAndLeftAtIsNull(String userId);
 
     @Modifying
     @Query("delete from AudioRoomMember m where m.room.id = :roomId")
