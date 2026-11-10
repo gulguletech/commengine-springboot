@@ -20,6 +20,9 @@ public class WalletService {
     public static final String COINS = "COINS";
     public static final String BEANS = "BEANS";
 
+    /** Game bets and wins are kept in the ledger for auditing but are NOT shown in the wallet history (each game has its own in-game history). */
+    private static final List<String> HIDDEN_TYPES = List.of("GAME_BET", "GAME_WIN");
+
     private final WalletRepository walletRepository;
     private final WalletTransactionRepository txRepository;
 
@@ -78,7 +81,7 @@ public class WalletService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> transactions(String userId, int limit) {
         int size = Math.max(1, Math.min(limit, 100));
-        return txRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, size)).stream().map(t -> {
+        return txRepository.findByUserIdAndTypeNotInOrderByCreatedAtDesc(userId, HIDDEN_TYPES, PageRequest.of(0, size)).stream().map(t -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", t.getId());
             m.put("currency", t.getCurrency());

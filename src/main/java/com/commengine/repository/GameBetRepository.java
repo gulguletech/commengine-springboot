@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 
 public interface GameBetRepository extends JpaRepository<GameBet, String> {
@@ -23,4 +24,19 @@ public interface GameBetRepository extends JpaRepository<GameBet, String> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update GameBet b set b.settled = true, b.payout = :payout where b.id = :id and b.settled = false")
     int markSettled(@Param("id") String id, @Param("payout") long payout);
+
+    // ---- Galaxy Feast: in-game history, daily revenue rank, per-round ranking ----------------
+
+    List<GameBet> findByUserIdAndGameAndSettledTrueOrderByRoundDescCreatedAtAsc(String userId, String game, Pageable pageable);
+
+    @Query("select coalesce(sum(b.payout), 0) from GameBet b where b.userId = :uid and b.game = :game and b.settled = true and b.createdAt >= :from")
+    long sumPayoutSince(@Param("uid") String uid, @Param("game") String game, @Param("from") Instant from);
+
+    /** rows of [userId, totalPayout], best first */
+    @Query("select b.userId, sum(b.payout) from GameBet b where b.game = :game and b.settled = true and b.createdAt >= :from group by b.userId having sum(b.payout) > 0 order by sum(b.payout) desc")
+    List<Object[]> topRevenue(@Param("game") String game, @Param("from") Instant from, Pageable pageable);
+
+    /** rows of [userId, totalPayout] for one round, best first */
+    @Query("select b.userId, sum(b.payout) from GameBet b where b.game = :game and b.round = :round and b.settled = true group by b.userId having sum(b.payout) > 0 order by sum(b.payout) desc")
+    List<Object[]> roundRevenue(@Param("game") String game, @Param("round") long round, Pageable pageable);
 }
