@@ -6,6 +6,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
@@ -19,6 +20,10 @@ public class JwtService {
 
     private final AppProperties props;
     private final SecretKey key;
+
+    /** Admin sessions are short (default 3h) and use their own expiry. */
+    @Value("${admin.jwt.expiration-ms:10800000}")
+    private long adminExpirationMs;
 
     public JwtService(AppProperties props) {
         this.props = props;
@@ -53,6 +58,21 @@ public class JwtService {
                 .claim("temp", true)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(seconds)))
+                .signWith(key)
+                .compact();
+    }
+
+    public long getAdminExpirationMs() { return adminExpirationMs; }
+
+    /** Admin token: carries role=ADMIN + adminId (NO userId, so it can never act as an app user). */
+    public String signAdminToken(String adminId, long passwordChangedAtEpochSeconds) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .claim("role", "ADMIN")
+                .claim("adminId", adminId)
+                .claim("pca", passwordChangedAtEpochSeconds)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusMillis(adminExpirationMs)))
                 .signWith(key)
                 .compact();
     }

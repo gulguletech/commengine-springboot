@@ -269,6 +269,17 @@ public class AudioRoomService {
         liveState.removeRoom(id);
     }
 
+    /** Admin panel: end any room regardless of who hosts it (same clean-up as the host ending it). */
+    @Transactional
+    public void adminEndRoom(String id) {
+        AudioRoom room = findRoomOrThrow(id);
+        socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:room-ended", Map.of("roomId", room.getId()));
+        joinRequestRepository.deleteAllByRoomId(id);
+        memberRepository.deleteAllByRoomId(id);
+        roomRepository.delete(room);
+        liveState.removeRoom(id);
+    }
+
     // ---- helpers ----
 
     private AudioRoom findRoomOrThrow(String id) {

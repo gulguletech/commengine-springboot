@@ -21,4 +21,11 @@ public interface WalletRepository extends JpaRepository<Wallet, String> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Wallet w set w.beans = w.beans + :amt where w.userId = :uid and w.beans + :amt >= 0")
     int adjustBeans(@Param("uid") String uid, @Param("amt") long amt);
+
+    // ---- admin dashboard ----
+    @Query("select coalesce(sum(w.coins), 0) from Wallet w")
+    long sumCoins();
+
+    @Query("select coalesce(sum(w.beans), 0) from Wallet w")
+    long sumBeans();
 }

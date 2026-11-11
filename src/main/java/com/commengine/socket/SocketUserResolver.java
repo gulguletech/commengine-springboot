@@ -28,7 +28,9 @@ public class SocketUserResolver {
             Claims claims = jwtService.verify(token);
             if (Boolean.TRUE.equals(claims.get("temp", Boolean.class))) return null;
             String userId = claims.get("userId", String.class);
-            return userRepository.findById(userId).orElse(null);
+            if (userId == null) return null;
+            User user = userRepository.findById(userId).orElse(null);
+            return (user != null && user.isBanned()) ? null : user;
         } catch (Exception e) {
             return null;
         }

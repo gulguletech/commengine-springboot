@@ -9,4 +9,6 @@ import java.util.List;
 public interface VideoRoomRepository extends JpaRepository<VideoRoom, String> {
     List<VideoRoom> findByStatusOrderByCreatedAtDesc(RoomStatus status);
     List<VideoRoom> findByHostIdAndStatus(String hostId, RoomStatus status);
+
+    long countByStatus(RoomStatus status);
 }

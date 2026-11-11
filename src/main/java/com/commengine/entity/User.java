@@ -45,6 +45,15 @@ public class User {
     @Column(nullable = false)
     private Instant lastSeen = Instant.now();
 
+    /** Set from the admin panel. A banned user cannot log in, call the API, or connect to sockets. */
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean banned = false;
+
+    private Instant bannedAt;
+
+    @Column(length = 200)
+    private String banReason;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 

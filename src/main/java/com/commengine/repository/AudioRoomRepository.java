@@ -15,4 +15,6 @@ public interface AudioRoomRepository extends JpaRepository<AudioRoom, String> {
     // (enforced in AudioRoomService#joinRoom).
     @Query("select r from AudioRoom r where r.status = :status order by r.createdAt desc")
     List<AudioRoom> findVisibleRooms(@Param("status") RoomStatus status);
+
+    long countByStatus(RoomStatus status);
 }

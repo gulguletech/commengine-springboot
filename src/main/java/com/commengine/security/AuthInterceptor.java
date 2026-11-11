@@ -42,8 +42,15 @@ public class AuthInterceptor implements HandlerInterceptor {
                 throw new ApiException("Please complete your profile first", HttpStatus.UNAUTHORIZED);
             }
             String userId = claims.get("userId", String.class);
+            if (userId == null) { // e.g. an admin-panel token: never valid for the app API
+                throw new ApiException("Invalid or expired token", HttpStatus.UNAUTHORIZED);
+            }
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new ApiException("User not found", HttpStatus.UNAUTHORIZED));
+            if (user.isBanned()) {
+                throw new ApiException("Your account has been suspended", HttpStatus.FORBIDDEN,
+                        java.util.Map.of("code", "ACCOUNT_BANNED"));
+            }
             request.setAttribute(CurrentUserArgumentResolver.REQUEST_ATTR, user);
             return true;
         } catch (JwtException | IllegalArgumentException e) {

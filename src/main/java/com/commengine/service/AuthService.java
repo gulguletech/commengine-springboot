@@ -38,6 +38,10 @@ public class AuthService {
 
         Map<String, Object> data = new LinkedHashMap<>();
         if (existingUser != null) {
+            if (existingUser.isBanned()) {
+                throw new ApiException("Your account has been suspended", HttpStatus.FORBIDDEN,
+                        java.util.Map.of("code", "ACCOUNT_BANNED"));
+            }
             existingUser.setOnline(true);
             existingUser.setLastSeen(Instant.now());
             userRepository.save(existingUser);

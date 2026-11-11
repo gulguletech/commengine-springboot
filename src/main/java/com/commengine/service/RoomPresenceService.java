@@ -150,6 +150,15 @@ public class RoomPresenceService {
         leaveAllExcept(userId, keepKind, keepRoomId, true);
     }
 
+    /** Admin ban: remove the user from every room and drop their live connections. */
+    @Transactional
+    public void kickUser(String userId) {
+        leaveAllExcept(userId, "none", "", false);
+        for (SocketIOClient c : new java.util.ArrayList<>(userClients(userId))) {
+            c.disconnect();
+        }
+    }
+
     /** Called when the user's last socket disconnects (app closed / network lost). */
     @Transactional
     public void handleDisconnect(String userId, java.util.UUID disconnectedSession) {
