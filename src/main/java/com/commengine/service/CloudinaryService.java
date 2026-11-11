@@ -27,6 +27,45 @@ public class CloudinaryService {
         this.cloudinary = cloudinary;
     }
 
+    /** Result of a gift upload: `duration` is in seconds and only set for videos. */
+    public record MediaResult(String url, String publicId, Double duration) {}
+
+    /**
+     * Uploads one image or video into its own folder and reports the video length.
+     * `kind` is "image" or "video"; the file's content type must match it.
+     */
+    public MediaResult uploadMedia(MultipartFile file, String folder, String kind) {
+        if (file == null || file.isEmpty()) {
+            throw ApiException.unprocessable("No file uploaded");
+        }
+        String contentType = file.getContentType() == null ? "" : file.getContentType();
+        if (!contentType.startsWith(kind + "/")) {
+            throw ApiException.unprocessable("Please upload a valid " + kind + " file");
+        }
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> result = cloudinary.uploader().upload(file.getBytes(), ObjectUtils.asMap(
+                    "folder", folder,
+                    "resource_type", kind
+            ));
+            Object d = result.get("duration");
+            Double duration = d instanceof Number n ? n.doubleValue() : null;
+            return new MediaResult(String.valueOf(result.get("secure_url")), String.valueOf(result.get("public_id")), duration);
+        } catch (IOException e) {
+            throw new ApiException("File upload failed: " + e.getMessage(), org.springframework.http.HttpStatus.BAD_GATEWAY);
+        }
+    }
+
+    /** Best-effort delete of an old asset. Never throws. */
+    public void delete(String publicId, String kind) {
+        if (publicId == null || publicId.isBlank()) return;
+        try {
+            cloudinary.uploader().destroy(publicId, ObjectUtils.asMap("resource_type", kind));
+        } catch (Exception ignored) {
+            // leaving an orphan file in Cloudinary is better than failing the admin's request
+        }
+    }
+
     public UploadResult upload(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw ApiException.unprocessable("No file uploaded");
