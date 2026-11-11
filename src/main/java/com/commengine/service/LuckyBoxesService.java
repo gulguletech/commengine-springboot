@@ -37,6 +37,8 @@ public class LuckyBoxesService {
 
     public static final long[] CHIPS = {100, 500, 1000, 5000};
     private static final long MAX_PER_ROUND = 100_000;
+    /** Max number of bets (chip taps) one player can place in a single round. */
+    public static final int MAX_BETS_PER_ROUND = 6;
     private static final long CLOSE_GUARD_MS = 600; // reject bets arriving right at the buzzer
     private static final int HISTORY = 10;
 
@@ -151,6 +153,13 @@ public class LuckyBoxesService {
         // Debit first (throws "Insufficient coins" and rolls everything back if the balance is too low)
         Wallet w = walletService.adjust(user.getId(), WalletService.COINS, -amount, "GAME_BET", null,
                 "Lucky Star bet · round " + c.round());
+
+        // Checked AFTER the debit on purpose: the wallet update locks this player's row, so two taps
+        // arriving at the same moment run one after the other and the count below is always exact.
+        // Throwing here rolls the debit back.
+        if (betRepository.countByUserIdAndGameAndRound(user.getId(), GAME, c.round()) >= MAX_BETS_PER_ROUND) {
+            throw ApiException.unprocessable("You can place at most " + MAX_BETS_PER_ROUND + " bets per round");
+        }
 
         GameBet b = new GameBet();
         b.setUserId(user.getId());

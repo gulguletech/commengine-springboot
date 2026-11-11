@@ -52,7 +52,8 @@ public class GalaxyFeastService {
 
     public static final long[] CHIPS = {2_000, 10_000, 50_000, 200_000};
     private static final long MAX_PER_ROUND = 5_000_000;
-    private static final int MAX_LINES = 40;
+    /** Max number of bets (chips) one player can place in a single round. */
+    public static final int MAX_BETS_PER_ROUND = 6;
     private static final long CLOSE_GUARD_MS = 600;
     private static final int HISTORY = 8;
     private static final int RANK_SIZE = 20;
@@ -210,16 +211,14 @@ public class GalaxyFeastService {
     @Transactional
     public Map<String, Object> placeBets(User user, List<BetLine> lines) {
         if (lines == null || lines.isEmpty()) throw ApiException.badRequest("No bets");
-        if (lines.size() > MAX_LINES) throw ApiException.badRequest("Too many bets at once");
+        if (lines.size() > MAX_BETS_PER_ROUND) throw ApiException.unprocessable("You can place at most " + MAX_BETS_PER_ROUND + " bets per round");
 
         long total = 0;
-        Map<Integer, Long> perOption = new TreeMap<>();
         for (BetLine l : lines) {
             if (l.option() < 0 || l.option() >= MULT_X100.length) throw ApiException.badRequest("Invalid option");
             final long amt = l.amount();
             if (Arrays.stream(CHIPS).noneMatch(x -> x == amt)) throw ApiException.badRequest("Invalid bet amount");
             total += amt;
-            perOption.merge(l.option(), amt, Long::sum);
         }
 
         Clock c = clock();
@@ -233,13 +232,21 @@ public class GalaxyFeastService {
         Wallet w = walletService.adjust(user.getId(), WalletService.COINS, -total, "GAME_BET", null,
                 "Galaxy Feast bet · round " + c.round());
 
-        for (Map.Entry<Integer, Long> e : perOption.entrySet()) {
+        // Checked AFTER the debit on purpose: the wallet update locks this player's row, so simultaneous
+        // taps run one after the other and the count is exact. Throwing rolls the debit back.
+        long placed = betRepository.countByUserIdAndGameAndRound(user.getId(), GAME, c.round());
+        if (placed + lines.size() > MAX_BETS_PER_ROUND) {
+            throw ApiException.unprocessable("You can place at most " + MAX_BETS_PER_ROUND + " bets per round");
+        }
+
+        // One row per chip, so "bets in this round" is an exact count.
+        for (BetLine l : lines) {
             GameBet b = new GameBet();
             b.setUserId(user.getId());
             b.setGame(GAME);
             b.setRound(c.round());
-            b.setOptionIndex(e.getKey());
-            b.setAmount(e.getValue());
+            b.setOptionIndex(l.option());
+            b.setAmount(l.amount());
             betRepository.save(b);
         }
 
