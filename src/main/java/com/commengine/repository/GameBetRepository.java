@@ -17,6 +17,10 @@ public interface GameBetRepository extends JpaRepository<GameBet, String> {
     /** How many bets (one chip tap = one row) this player already placed in a round. */
     long countByUserIdAndGameAndRound(String userId, String game, long round);
 
+    /** The distinct items (options/boxes) this player has already bet on in a round. */
+    @Query("select distinct b.optionIndex from GameBet b where b.userId = :uid and b.game = :game and b.round = :round")
+    List<Integer> findDistinctOptions(@Param("uid") String uid, @Param("game") String game, @Param("round") long round);
+
     @Query("select coalesce(sum(b.amount), 0) from GameBet b where b.userId = :uid and b.game = :game and b.round = :round")
     long sumAmount(@Param("uid") String uid, @Param("game") String game, @Param("round") long round);
 

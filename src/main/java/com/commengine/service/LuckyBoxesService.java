@@ -37,8 +37,8 @@ public class LuckyBoxesService {
 
     public static final long[] CHIPS = {100, 500, 1000, 5000};
     private static final long MAX_PER_ROUND = 100_000;
-    /** Max number of bets (chip taps) one player can place in a single round. */
-    public static final int MAX_BETS_PER_ROUND = 6;
+    /** Max number of DIFFERENT boxes one player can bet on in a single round (any number of bets on those boxes). */
+    public static final int MAX_ITEMS_PER_ROUND = 6;
     private static final long CLOSE_GUARD_MS = 600; // reject bets arriving right at the buzzer
     private static final int HISTORY = 10;
 
@@ -155,10 +155,13 @@ public class LuckyBoxesService {
                 "Lucky Star bet · round " + c.round());
 
         // Checked AFTER the debit on purpose: the wallet update locks this player's row, so two taps
-        // arriving at the same moment run one after the other and the count below is always exact.
+        // arriving at the same moment run one after the other and the set below is always exact.
+        // Rule: at most MAX_ITEMS_PER_ROUND different boxes per round; any number of bets on them.
         // Throwing here rolls the debit back.
-        if (betRepository.countByUserIdAndGameAndRound(user.getId(), GAME, c.round()) >= MAX_BETS_PER_ROUND) {
-            throw ApiException.unprocessable("You can place at most " + MAX_BETS_PER_ROUND + " bets per round");
+        Set<Integer> items = new HashSet<>(betRepository.findDistinctOptions(user.getId(), GAME, c.round()));
+        items.add(option);
+        if (items.size() > MAX_ITEMS_PER_ROUND) {
+            throw ApiException.unprocessable("You can select at most " + MAX_ITEMS_PER_ROUND + " items per round");
         }
 
         GameBet b = new GameBet();

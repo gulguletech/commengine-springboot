@@ -52,8 +52,8 @@ public class GalaxyFeastService {
 
     public static final long[] CHIPS = {2_000, 10_000, 50_000, 200_000};
     private static final long MAX_PER_ROUND = 5_000_000;
-    /** Max number of bets (chips) one player can place in a single round. */
-    public static final int MAX_BETS_PER_ROUND = 6;
+    /** Max number of DIFFERENT items one player can bet on in a single round (any number of bets on those items). */
+    public static final int MAX_ITEMS_PER_ROUND = 6;
     private static final long CLOSE_GUARD_MS = 600;
     private static final int HISTORY = 8;
     private static final int RANK_SIZE = 20;
@@ -211,7 +211,10 @@ public class GalaxyFeastService {
     @Transactional
     public Map<String, Object> placeBets(User user, List<BetLine> lines) {
         if (lines == null || lines.isEmpty()) throw ApiException.badRequest("No bets");
-        if (lines.size() > MAX_BETS_PER_ROUND) throw ApiException.unprocessable("You can place at most " + MAX_BETS_PER_ROUND + " bets per round");
+        // Quick pre-check: a single request can't touch more than the allowed number of different items.
+        if (lines.stream().map(BetLine::option).distinct().count() > MAX_ITEMS_PER_ROUND) {
+            throw ApiException.unprocessable("You can select at most " + MAX_ITEMS_PER_ROUND + " items per round");
+        }
 
         long total = 0;
         for (BetLine l : lines) {
@@ -233,13 +236,15 @@ public class GalaxyFeastService {
                 "Galaxy Feast bet · round " + c.round());
 
         // Checked AFTER the debit on purpose: the wallet update locks this player's row, so simultaneous
-        // taps run one after the other and the count is exact. Throwing rolls the debit back.
-        long placed = betRepository.countByUserIdAndGameAndRound(user.getId(), GAME, c.round());
-        if (placed + lines.size() > MAX_BETS_PER_ROUND) {
-            throw ApiException.unprocessable("You can place at most " + MAX_BETS_PER_ROUND + " bets per round");
+        // taps run one after the other and the set of items is exact. Throwing rolls the debit back.
+        // Rule: at most MAX_ITEMS_PER_ROUND different items per round; any number of bets on them.
+        Set<Integer> items = new HashSet<>(betRepository.findDistinctOptions(user.getId(), GAME, c.round()));
+        for (BetLine l : lines) items.add(l.option());
+        if (items.size() > MAX_ITEMS_PER_ROUND) {
+            throw ApiException.unprocessable("You can select at most " + MAX_ITEMS_PER_ROUND + " items per round");
         }
 
-        // One row per chip, so "bets in this round" is an exact count.
+        // One row per chip.
         for (BetLine l : lines) {
             GameBet b = new GameBet();
             b.setUserId(user.getId());

@@ -72,11 +72,23 @@ public class GiftService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", g.getId());
         m.put("name", g.getName());
-        m.put("emoji", g.getEmoji());
-        m.put("imageUrl", g.getImageUrl());
-        m.put("videoUrl", g.getVideoUrl());
+        m.put("emoji", cleanText(g.getEmoji()));
+        m.put("imageUrl", cleanUrl(g.getImageUrl()));
+        m.put("videoUrl", cleanUrl(g.getVideoUrl()));
         m.put("price", g.getPrice());
         return m;
+    }
+
+    /** Rows saved with a literal "undefined"/"null" (a classic form-data slip) must not reach the app as real values. */
+    private static String cleanText(String v) {
+        if (v == null) return null;
+        String t = v.trim();
+        return (t.isEmpty() || t.equalsIgnoreCase("undefined") || t.equalsIgnoreCase("null")) ? null : t;
+    }
+
+    private static String cleanUrl(String v) {
+        String t = cleanText(v);
+        return (t != null && t.regionMatches(true, 0, "http", 0, 4)) ? t : null;
     }
 
     // ------------------------------------------------------------------ admin side
@@ -195,9 +207,6 @@ public class GiftService {
     public Map<String, Object> send(User sender, SendGiftRequest req) {
         Gift gift = giftRepository.findById(req.getGiftId()).filter(Gift::isActive)
                 .orElseThrow(() -> ApiException.badRequest("This gift is no longer available"));
-        if (sender.getId().equals(req.getReceiverId())) {
-            throw ApiException.badRequest("You can't send a gift to yourself");
-        }
         User receiver = userRepository.findById(req.getReceiverId())
                 .orElseThrow(() -> ApiException.notFound("Receiver not found"));
 
@@ -209,9 +218,10 @@ public class GiftService {
             if (!audioState.getMembers(room.getId()).contains(sender.getId())) {
                 throw ApiException.forbidden("Join the room to send gifts");
             }
+            // Anyone in the room can gift anyone in the room (seated or not, themselves included).
             boolean receiverIsHost = room.getHost().getId().equals(receiver.getId());
-            boolean receiverSeated = audioState.findSeatIndexByUser(room.getId(), receiver.getId()) != -1;
-            if (!receiverIsHost && !receiverSeated) throw ApiException.badRequest("Gifts can only go to the host or people on a seat");
+            boolean receiverInRoom = audioState.getMembers(room.getId()).contains(receiver.getId());
+            if (!receiverIsHost && !receiverInRoom) throw ApiException.badRequest("That person is no longer in the room");
             channel = "audio-room:" + room.getId();
         } else if ("video".equals(req.getRoomKind())) {
             VideoRoom room = videoRoomRepository.findById(req.getRoomId()).orElse(null);
