@@ -73,7 +73,7 @@ public class GiftService {
         m.put("id", g.getId());
         m.put("name", g.getName());
         m.put("emoji", cleanText(g.getEmoji()));
-        m.put("imageUrl", cleanUrl(g.getImageUrl()));
+        m.put("imageUrl", imageDelivery(cleanUrl(g.getImageUrl())));
         m.put("videoUrl", cleanUrl(g.getVideoUrl()));
         m.put("price", g.getPrice());
         return m;
@@ -84,6 +84,19 @@ public class GiftService {
         if (v == null) return null;
         String t = v.trim();
         return (t.isEmpty() || t.equalsIgnoreCase("undefined") || t.equalsIgnoreCase("null")) ? null : t;
+    }
+
+    /**
+     * Serve gift pictures as a small standard PNG (max 256px) instead of the original upload. Admin uploads can be
+     * up to 5 MB, in odd formats (CMYK JPEG, animated WebP...) that load slowly or not at all on phones; with 8-12
+     * gifts on screen that shows up as blank gift cards. Cloudinary converts on the fly and caches the result.
+     */
+    private static String imageDelivery(String url) {
+        if (url == null) return null;
+        String marker = "/image/upload/";
+        int i = url.indexOf(marker);
+        if (i < 0 || !url.contains("res.cloudinary.com")) return url;
+        return url.substring(0, i + marker.length()) + "c_limit,w_256,h_256,f_png,q_auto/" + url.substring(i + marker.length());
     }
 
     private static String cleanUrl(String v) {
