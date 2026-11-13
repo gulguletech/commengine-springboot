@@ -54,6 +54,11 @@ app:
     app-id: ${AGORA_APP_ID:}
     app-certificate: ${AGORA_APP_CERTIFICATE:}
     token-expiry-seconds: ${AGORA_TOKEN_EXPIRY_SECONDS:3600}
+  cashfree:
+    app-id: ${CASHFREE_APP_ID:}
+    secret-key: ${CASHFREE_SECRET_KEY:}
+    env: ${CASHFREE_ENV:SANDBOX}            # set PRODUCTION on Render when going live
+    public-base-url: ${PUBLIC_BASE_URL:https://commengine-springboot-vyrz.onrender.com}
   socketio:
     host: ${SOCKETIO_HOST:0.0.0.0}
     port: ${SOCKETIO_PORT:5001}

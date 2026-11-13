@@ -41,6 +41,8 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/health",
                         "/api/auth/verify-widget-token",
                         "/api/auth/complete-profile",
+                        "/api/payments/webhook/cashfree", // called by Cashfree servers; verified by HMAC signature
+                        "/api/payments/return",           // browser landing page after checkout (no secrets)
                         "/api/admin/**" // own interceptor above (admin JWT), or X-Admin-Key for /api/admin/wallet
                 );
     }

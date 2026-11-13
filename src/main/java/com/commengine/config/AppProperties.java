@@ -11,6 +11,7 @@ public class AppProperties {
     private final Cloudinary cloudinary = new Cloudinary();
     private final Agora agora = new Agora();
     private final SocketIo socketio = new SocketIo();
+    private final Cashfree cashfree = new Cashfree();
 
     public String getClientUrl() { return clientUrl; }
     public void setClientUrl(String clientUrl) { this.clientUrl = clientUrl; }
@@ -19,6 +20,7 @@ public class AppProperties {
     public Cloudinary getCloudinary() { return cloudinary; }
     public Agora getAgora() { return agora; }
     public SocketIo getSocketio() { return socketio; }
+    public Cashfree getCashfree() { return cashfree; }
 
     public static class Jwt {
         private String secret = "change_me";
@@ -74,5 +76,27 @@ public class AppProperties {
         public void setHost(String host) { this.host = host; }
         public int getPort() { return port; }
         public void setPort(int port) { this.port = port; }
+    }
+
+    public static class Cashfree {
+        private String appId;
+        private String secretKey;
+        /** PRODUCTION or SANDBOX */
+        private String env = "SANDBOX";
+        private String apiVersion = "2023-08-01";
+        /** Public https URL of this backend; Cashfree redirects here after payment. */
+        private String publicBaseUrl = "https://commengine-springboot-vyrz.onrender.com";
+
+        public boolean isProduction() { return "PRODUCTION".equalsIgnoreCase(env); }
+        public String getAppId() { return appId; }
+        public void setAppId(String appId) { this.appId = appId; }
+        public String getSecretKey() { return secretKey; }
+        public void setSecretKey(String secretKey) { this.secretKey = secretKey; }
+        public String getEnv() { return env; }
+        public void setEnv(String env) { this.env = env; }
+        public String getApiVersion() { return apiVersion; }
+        public void setApiVersion(String apiVersion) { this.apiVersion = apiVersion; }
+        public String getPublicBaseUrl() { return publicBaseUrl; }
+        public void setPublicBaseUrl(String publicBaseUrl) { this.publicBaseUrl = publicBaseUrl; }
     }
 }
