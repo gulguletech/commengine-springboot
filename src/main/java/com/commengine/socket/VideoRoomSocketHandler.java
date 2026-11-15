@@ -29,15 +29,18 @@ public class VideoRoomSocketHandler {
     private final VideoRoomRepository videoRoomRepository;
     private final VideoRoomCommentRepository commentRepository;
     private final com.commengine.service.RoomPresenceService presence;
+    private final com.commengine.service.EntryEffectService entryEffects;
     private SocketIOServer server;
 
     public VideoRoomSocketHandler(SocketUserResolver userResolver, VideoRoomRepository videoRoomRepository,
                                    VideoRoomCommentRepository commentRepository,
-                                   com.commengine.service.RoomPresenceService presence) {
+                                   com.commengine.service.RoomPresenceService presence,
+                                   com.commengine.service.EntryEffectService entryEffects) {
         this.userResolver = userResolver;
         this.videoRoomRepository = videoRoomRepository;
         this.commentRepository = commentRepository;
         this.presence = presence;
+        this.entryEffects = entryEffects;
     }
 
     public void register(SocketIOServer server) {
@@ -54,6 +57,8 @@ public class VideoRoomSocketHandler {
             // only subscribes this socket to the room's events; the viewer count is
             // broadcast by the REST join/leave (RoomPresenceService) so it is never double counted
             client.joinRoom("video-room:" + payload.getRoomId());
+            // everyone in the stream (including the joiner) sees the newcomer's entry effect, if they own one
+            entryEffects.announce("video-room:" + payload.getRoomId(), "video", payload.getRoomId(), user.getId());
         };
     }
 

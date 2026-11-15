@@ -40,6 +40,16 @@ public class SocketUserResolver {
         client.set(STORE_KEY, user);
     }
 
+    /**
+     * The user object is cached on each socket at connect time. After the user equips / renews a store item, push the
+     * fresh copy onto all their live sockets so seats, chat lines and entry effects use the new look straight away.
+     */
+    public void refreshClients(com.corundumstudio.socketio.SocketIOServer server, User fresh) {
+        for (SocketIOClient c : server.getRoomOperations("user:" + fresh.getId()).getClients()) {
+            cacheOnClient(c, fresh);
+        }
+    }
+
     /** Returns the user cached at connect time, falling back to re-resolving from the handshake token. */
     public User currentUser(SocketIOClient client) {
         User cached = client.get(STORE_KEY);

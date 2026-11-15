@@ -17,11 +17,14 @@ import com.commengine.socket.AudioRoomLiveState;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -204,26 +207,77 @@ public class AdminPanelService {
 
     // ------------------------------------------------------------------ transactions
 
+    /** Hard cap for one Excel export, so a huge date range can't exhaust memory. */
+    private static final int EXPORT_MAX_ROWS = 50_000;
+    private static final ZoneId ADMIN_ZONE = ZoneId.of("Asia/Kolkata");
+
     @Transactional(readOnly = true)
-    public Map<String, Object> listTransactions(String type, String userId, int page, int size) {
+    public Map<String, Object> listTransactions(List<String> types, String userId, String from, String to, int page, int size) {
         int p = Math.max(0, page);
         int s = Math.min(Math.max(1, size), 100);
         PageRequest pr = PageRequest.of(p, s, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<WalletTransaction> result;
-        if (userId != null && !userId.isBlank()) result = txs.findByUserId(userId.trim(), pr);
-        else if (type != null && !type.isBlank()) result = txs.findByType(type.trim().toUpperCase(), pr);
-        else result = txs.findAll(pr);
+        Page<WalletTransaction> result = txs.findAll(txSpec(types, userId, from, to), pr);
+        return page(txRows(result.getContent()), result.getTotalElements(), p, s);
+    }
 
-        Map<String, User> byId = users.findAllById(result.getContent().stream().map(WalletTransaction::getUserId).distinct().toList())
-                .stream().collect(Collectors.toMap(User::getId, Function.identity(), (a, b) -> a));
+    /** Every transaction that matches the filters (up to EXPORT_MAX_ROWS), newest first, for the Excel export. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> exportTransactions(List<String> types, String from, String to) {
+        Specification<WalletTransaction> spec = txSpec(types, null, from, to);
+        long total = txs.count(spec);
+        PageRequest pr = PageRequest.of(0, EXPORT_MAX_ROWS, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<WalletTransaction> rows = txs.findAll(spec, pr).getContent();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("items", txRows(rows));
+        m.put("total", total);
+        m.put("truncated", total > rows.size());
+        return m;
+    }
 
-        List<Map<String, Object>> items = new ArrayList<>();
-        for (WalletTransaction t : result.getContent()) {
+    /** from/to are yyyy-MM-dd calendar days in India time; "to" is included (the whole day). */
+    private Specification<WalletTransaction> txSpec(List<String> types, String userId, String from, String to) {
+        Instant fromInstant = parseDay(from, false);
+        Instant toExclusive = parseDay(to, true);
+        if (fromInstant != null && toExclusive != null && !fromInstant.isBefore(toExclusive)) {
+            throw ApiException.badRequest("The 'from' date must be on or before the 'to' date");
+        }
+        List<String> cleanTypes = types == null ? List.of() : types.stream()
+                .filter(t -> t != null && !t.isBlank()).map(t -> t.trim().toUpperCase()).distinct().toList();
+        return (root, query, cb) -> {
+            List<Predicate> ps = new ArrayList<>();
+            if (userId != null && !userId.isBlank()) ps.add(cb.equal(root.get("userId"), userId.trim()));
+            if (!cleanTypes.isEmpty()) ps.add(root.get("type").in(cleanTypes));
+            if (fromInstant != null) ps.add(cb.greaterThanOrEqualTo(root.get("createdAt"), fromInstant));
+            if (toExclusive != null) ps.add(cb.lessThan(root.get("createdAt"), toExclusive));
+            return cb.and(ps.toArray(new Predicate[0]));
+        };
+    }
+
+    private static Instant parseDay(String day, boolean endOfDay) {
+        if (day == null || day.isBlank()) return null;
+        try {
+            LocalDate d = LocalDate.parse(day.trim());
+            return (endOfDay ? d.plusDays(1) : d).atStartOfDay(ADMIN_ZONE).toInstant();
+        } catch (java.time.format.DateTimeParseException e) {
+            throw ApiException.badRequest("Dates must look like 2026-11-14");
+        }
+    }
+
+    private List<Map<String, Object>> txRows(List<WalletTransaction> content) {
+        List<String> ids = content.stream().map(WalletTransaction::getUserId).distinct().toList();
+        Map<String, User> byId = new HashMap<>();
+        for (int i = 0; i < ids.size(); i += 1000) { // chunked: keeps the IN (...) list small
+            for (User u : users.findAllById(ids.subList(i, Math.min(ids.size(), i + 1000)))) byId.put(u.getId(), u);
+        }
+        List<Map<String, Object>> items = new ArrayList<>(content.size());
+        for (WalletTransaction t : content) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id", t.getId());
             m.put("userId", t.getUserId());
             User u = byId.get(t.getUserId());
             m.put("userName", u == null ? "(deleted user)" : u.getName());
+            m.put("userPublicId", u == null ? null : u.getPublicId());
+            m.put("userPhone", u == null ? null : u.getPhone());
             m.put("currency", t.getCurrency());
             m.put("amount", t.getAmount());
             m.put("balanceAfter", t.getBalanceAfter());
@@ -232,7 +286,7 @@ public class AdminPanelService {
             m.put("createdAt", t.getCreatedAt());
             items.add(m);
         }
-        return page(items, result.getTotalElements(), p, s);
+        return items;
     }
 
     // ------------------------------------------------------------------ helpers
@@ -244,10 +298,12 @@ public class AdminPanelService {
     private static Map<String, Object> userRow(User u) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", u.getId());
+        m.put("publicId", u.getPublicId());
         m.put("name", u.getName());
         m.put("phone", u.getPhone());
         m.put("age", u.getAge());
         m.put("gender", u.getGender());
+        m.put("language", u.getLanguage());
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("isVerified", u.isVerified());
         m.put("isOnline", u.isOnline());

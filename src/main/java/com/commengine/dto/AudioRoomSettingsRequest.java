@@ -13,9 +13,21 @@ public class AudioRoomSettingsRequest {
 
     private boolean passcodeProvided = false;
 
+    /** Optional: change the room's type (FUN, MUSIC, ...). Null = leave as is. */
+    private String category;
+
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
+    /** Store background for the room. Send null to remove it; leave the field out to keep the current one. */
+    private String backgroundItemId;
+    private boolean backgroundProvided = false;
+
     public RoomType getType() { return type; }
     public void setType(RoomType type) { this.type = type; }
     public String getPasscode() { return passcode; }
     public void setPasscode(String passcode) { this.passcode = passcode; this.passcodeProvided = true; }
     public boolean isPasscodeProvided() { return passcodeProvided; }
+    public String getBackgroundItemId() { return backgroundItemId; }
+    public void setBackgroundItemId(String backgroundItemId) { this.backgroundItemId = backgroundItemId; this.backgroundProvided = true; }
+    public boolean isBackgroundProvided() { return backgroundProvided; }
 }

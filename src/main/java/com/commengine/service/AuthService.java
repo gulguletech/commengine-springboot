@@ -19,8 +19,11 @@ public class AuthService {
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final Msg91Service msg91Service;
+    private final PublicIdService publicIdService;
 
-    public AuthService(UserRepository userRepository, JwtService jwtService, Msg91Service msg91Service) {
+    public AuthService(UserRepository userRepository, JwtService jwtService, Msg91Service msg91Service,
+                       PublicIdService publicIdService) {
+        this.publicIdService = publicIdService;
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.msg91Service = msg91Service;
@@ -42,6 +45,7 @@ public class AuthService {
                 throw new ApiException("Your account has been suspended", HttpStatus.FORBIDDEN,
                         java.util.Map.of("code", "ACCOUNT_BANNED"));
             }
+            if (existingUser.getPublicId() == null) existingUser.setPublicId(publicIdService.generate());
             existingUser.setOnline(true);
             existingUser.setLastSeen(Instant.now());
             userRepository.save(existingUser);
@@ -71,6 +75,8 @@ public class AuthService {
         user.setAge(req.getAge());
         user.setGender(req.getGender());
         user.setBio(req.getBio());
+        user.setLanguage(com.commengine.util.Catalog.language(req.getLanguage()));
+        user.setPublicId(publicIdService.generate());
         user.setVerified(true);
         user.setOnline(true);
         userRepository.save(user);

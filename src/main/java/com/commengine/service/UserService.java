@@ -33,6 +33,7 @@ public class UserService {
         if (req.getName() != null) user.setName(req.getName());
         if (req.getBio() != null) user.setBio(req.getBio());
         if (req.getGender() != null) user.setGender(req.getGender());
+        if (req.getLanguage() != null) user.setLanguage(com.commengine.util.Catalog.language(req.getLanguage()));
         userRepository.save(user);
         return Map.of("user", DtoMapper.userFull(user));
     }
@@ -55,6 +56,8 @@ public class UserService {
 
     public Map<String, Object> searchUsers(User currentUser, String search) {
         String trimmed = search == null ? "" : search.trim();
+        // people paste IDs like "#4829153" or "ID: 4829153"
+        trimmed = trimmed.replaceFirst("^(?i)(?:id\\s*[:#]?\\s*|#)(?=\\d)", "").trim();
         List<User> users = userRepository.searchUsers(currentUser.getId(), trimmed, PageRequest.of(0, 30));
         return Map.of("users", users.stream().map(DtoMapper::userWithOnline).collect(Collectors.toList()));
     }

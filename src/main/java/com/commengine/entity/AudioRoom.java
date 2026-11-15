@@ -34,8 +34,31 @@ public class AudioRoom {
 
     private String coverUrl;
 
+    /** One of Catalog.ROOM_CATEGORIES (FUN, MUSIC, GAME, ...). */
+    @Column(length = 20)
+    private String category;
+
+    /** The host's language when the room was created. */
+    @Column(length = 30)
+    private String language;
+
     /** Never serialize this to a client response — see AudioRoomService#sanitize. */
     private String passcode;
+
+    // ---- background from the store (denormalised copy, set by the host) ----
+    @Column(name = "background_item_id")
+    private String backgroundItemId;
+    @Column(name = "background_url", length = 600)
+    private String backgroundUrl;
+    @Column(name = "background_thumb_url", length = 600)
+    private String backgroundThumbUrl;
+    private Double backgroundScrim;
+    /** When the host's rental of a paid background runs out. null = free background. */
+    private Instant backgroundExpiresAt;
+
+    public boolean hasActiveBackground() {
+        return backgroundUrl != null && (backgroundExpiresAt == null || backgroundExpiresAt.isAfter(Instant.now()));
+    }
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

@@ -30,6 +30,14 @@ public class VideoRoom {
 
     private String coverUrl;
 
+    /** One of Catalog.ROOM_CATEGORIES (FUN, MUSIC, GAME, ...). */
+    @Column(length = 20)
+    private String category;
+
+    /** The host's language when the room was created. */
+    @Column(length = 30)
+    private String language;
+
     @Column(nullable = false)
     private int viewerCount = 0;
 

@@ -32,8 +32,8 @@ public class GiftService {
 
     /** Limits for what the admin can upload. */
     private static final long MAX_IMAGE_BYTES = 5L * 1024 * 1024;
-    private static final long MAX_VIDEO_BYTES = 10L * 1024 * 1024;
-    private static final double MAX_VIDEO_SECONDS = 5.5; // "5 seconds" with a little slack for container rounding
+    private static final long MAX_VIDEO_BYTES = 20L * 1024 * 1024;
+    private static final double MAX_VIDEO_SECONDS = 10.5; // "10 seconds" with a little slack for container rounding
     private static final long MAX_PRICE = 1_000_000;
 
     private final WalletService walletService;
@@ -205,12 +205,12 @@ public class GiftService {
     private void attachVideo(Gift g, MultipartFile video) {
         // MP4 only: every phone plays it, so the clip never silently fails in someone's room.
         if (!"video/mp4".equals(video.getContentType())) throw ApiException.unprocessable("Gift video must be an MP4 file");
-        if (video.getSize() > MAX_VIDEO_BYTES) throw ApiException.unprocessable("Gift video must be under 10 MB");
+        if (video.getSize() > MAX_VIDEO_BYTES) throw ApiException.unprocessable("Gift video must be under 20 MB");
         CloudinaryService.MediaResult up = cloudinaryService.uploadMedia(video, "commengine/gifts", "video");
         // Server-side length check (the admin page also checks in the browser, but never trust the client).
         if (up.duration() != null && up.duration() > MAX_VIDEO_SECONDS) {
             cloudinaryService.delete(up.publicId(), "video");
-            throw ApiException.unprocessable("Gift video can be at most 5 seconds long");
+            throw ApiException.unprocessable("Gift video can be at most 10 seconds long");
         }
         g.setVideoUrl(up.url());
         g.setVideoPublicId(up.publicId());

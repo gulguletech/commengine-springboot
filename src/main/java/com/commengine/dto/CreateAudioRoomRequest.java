@@ -12,6 +12,11 @@ public class CreateAudioRoomRequest {
 
     private String coverUrl;
 
+    /** FUN, MUSIC, GAME, BIRTHDAY, FRIENDS, PARTY or CHAT. Blank = FUN. */
+    private String category;
+    /** Store background (free, or paid and owned) to put in the room. Optional. */
+    private String backgroundItemId;
+
     @Pattern(regexp = "^\\d{4}$", message = "Passcode must be exactly 4 digits")
     private String passcode;
 
@@ -19,8 +24,12 @@ public class CreateAudioRoomRequest {
     public void setTitle(String title) { this.title = title; }
     public RoomType getType() { return type == null ? RoomType.PUBLIC : type; }
     public void setType(RoomType type) { this.type = type; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
     public String getCoverUrl() { return coverUrl; }
     public void setCoverUrl(String coverUrl) { this.coverUrl = coverUrl; }
+    public String getBackgroundItemId() { return backgroundItemId; }
+    public void setBackgroundItemId(String backgroundItemId) { this.backgroundItemId = backgroundItemId; }
     public String getPasscode() { return passcode; }
     public void setPasscode(String passcode) { this.passcode = passcode; }
 }

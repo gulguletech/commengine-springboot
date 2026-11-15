@@ -12,16 +12,44 @@ public final class DtoMapper {
 
     private DtoMapper() {}
 
+    // ---- Store cosmetics ----------------------------------------------
+
+    /** Adds the equipped avatar frame and chat bubble (null when none / expired) to any user-shaped payload. */
+    public static void putCosmetics(Map<String, Object> m, User u) {
+        m.put("frameUrl", u.activeFrameUrl());
+        if (u.hasActiveBubble()) {
+            Map<String, Object> b = new LinkedHashMap<>();
+            b.put("url", u.getBubbleUrl());
+            b.put("textColor", u.getBubbleTextColor() == null ? "#FFFFFF" : u.getBubbleTextColor());
+            m.put("bubble", b);
+        } else {
+            m.put("bubble", null);
+        }
+    }
+
+    /** The room's store background, or null when none / the host's rental has run out. */
+    public static Map<String, Object> roomBackground(AudioRoom r) {
+        if (!r.hasActiveBackground()) return null;
+        Map<String, Object> b = new LinkedHashMap<>();
+        b.put("id", r.getBackgroundItemId());
+        b.put("imageUrl", r.getBackgroundUrl());
+        b.put("thumbUrl", r.getBackgroundThumbUrl());
+        b.put("scrim", r.getBackgroundScrim() == null ? 0.35 : r.getBackgroundScrim());
+        return b;
+    }
+
     // ---- User shapes -------------------------------------------------
 
     /** Full user record (matches Prisma's default `user.findUnique`/`update` — every scalar column). */
     public static Map<String, Object> userFull(User u) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", u.getId());
+        m.put("publicId", u.getPublicId());
         m.put("name", u.getName());
         m.put("phone", u.getPhone());
         m.put("age", u.getAge());
         m.put("gender", u.getGender());
+        m.put("language", u.getLanguage());
         m.put("bio", u.getBio());
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("isVerified", u.isVerified());
@@ -29,6 +57,7 @@ public final class DtoMapper {
         m.put("lastSeen", u.getLastSeen());
         m.put("createdAt", u.getCreatedAt());
         m.put("updatedAt", u.getUpdatedAt());
+        putCosmetics(m, u);
         return m;
     }
 
@@ -37,8 +66,10 @@ public final class DtoMapper {
         if (u == null) return null;
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", u.getId());
+        m.put("publicId", u.getPublicId());
         m.put("name", u.getName());
         m.put("avatarUrl", u.getAvatarUrl());
+        putCosmetics(m, u);
         return m;
     }
 
@@ -53,13 +84,16 @@ public final class DtoMapper {
     public static Map<String, Object> userProfile(User u) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", u.getId());
+        m.put("publicId", u.getPublicId());
         m.put("name", u.getName());
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("bio", u.getBio());
         m.put("gender", u.getGender());
+        m.put("language", u.getLanguage());
         m.put("isOnline", u.isOnline());
         m.put("lastSeen", u.getLastSeen());
         m.put("createdAt", u.getCreatedAt());
+        putCosmetics(m, u);
         return m;
     }
 
@@ -67,12 +101,15 @@ public final class DtoMapper {
     public static Map<String, Object> userMemberProfile(User u) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", u.getId());
+        m.put("publicId", u.getPublicId());
         m.put("name", u.getName());
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("bio", u.getBio());
         m.put("age", u.getAge());
         m.put("gender", u.getGender());
+        m.put("language", u.getLanguage());
         m.put("isOnline", u.isOnline());
+        putCosmetics(m, u);
         return m;
     }
 
@@ -87,9 +124,12 @@ public final class DtoMapper {
         m.put("status", r.getStatus());
         m.put("channelName", r.getChannelName());
         m.put("coverUrl", r.getCoverUrl());
+        m.put("category", r.getCategory() == null ? "FUN" : r.getCategory());
+        m.put("language", r.getLanguage());
         m.put("createdAt", r.getCreatedAt());
         m.put("endedAt", r.getEndedAt());
         m.put("hostId", r.getHost().getId());
+        m.put("background", roomBackground(r));
         return m;
     }
 
@@ -140,6 +180,8 @@ public final class DtoMapper {
         m.put("status", r.getStatus());
         m.put("channelName", r.getChannelName());
         m.put("coverUrl", r.getCoverUrl());
+        m.put("category", r.getCategory() == null ? "FUN" : r.getCategory());
+        m.put("language", r.getLanguage());
         m.put("viewerCount", r.getViewerCount());
         m.put("createdAt", r.getCreatedAt());
         m.put("endedAt", r.getEndedAt());

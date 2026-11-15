@@ -19,6 +19,10 @@ public class User {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    /** Short 7-digit ID people can search and share (the long `id` stays internal). */
+    @Column(name = "public_id", unique = true, length = 12)
+    private String publicId;
+
     @Column(nullable = false)
     private String name;
 
@@ -33,6 +37,10 @@ public class User {
 
     @Column(length = 300)
     private String bio;
+
+    /** One of Catalog.LANGUAGES. Null for accounts made before languages existed. */
+    @Column(length = 30)
+    private String language;
 
     private String avatarUrl;
 
@@ -53,6 +61,39 @@ public class User {
 
     @Column(length = 200)
     private String banReason;
+
+    // ---- equipped store items (denormalised so DtoMapper can attach them to every user payload without a DB call) ----
+
+    @Column(name = "frame_item_id") private String frameItemId;
+    @Column(name = "frame_url", length = 600) private String frameUrl;
+    @Column(name = "frame_expires_at") private Instant frameExpiresAt;
+
+    @Column(name = "bubble_item_id") private String bubbleItemId;
+    @Column(name = "bubble_url", length = 600) private String bubbleUrl;
+    @Column(name = "bubble_text_color", length = 9) private String bubbleTextColor;
+    @Column(name = "bubble_expires_at") private Instant bubbleExpiresAt;
+
+    @Column(name = "entry_item_id") private String entryItemId;
+    @Column(name = "entry_name", length = 60) private String entryName;
+    @Column(name = "entry_video_url", length = 600) private String entryVideoUrl;
+    @Column(name = "entry_expires_at") private Instant entryExpiresAt;
+
+    /** null expiry = a free item that never runs out. */
+    private static boolean live(Instant expiresAt) {
+        return expiresAt == null || expiresAt.isAfter(Instant.now());
+    }
+
+    public String activeFrameUrl() {
+        return frameUrl != null && live(frameExpiresAt) ? frameUrl : null;
+    }
+
+    public boolean hasActiveBubble() {
+        return bubbleUrl != null && live(bubbleExpiresAt);
+    }
+
+    public boolean hasActiveEntryEffect() {
+        return entryVideoUrl != null && live(entryExpiresAt);
+    }
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

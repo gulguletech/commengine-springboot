@@ -87,11 +87,27 @@ public class AdminPanelController {
 
     // ---- transactions ----
 
+    /** types = comma-separated (RECHARGE,GIFT_SENT,...), empty = all. from/to = yyyy-MM-dd (India time, both included). */
     @GetMapping("/transactions")
-    public Object transactions(@RequestParam(required = false) String type,
+    public Object transactions(@RequestParam(required = false) String types,
                                @RequestParam(required = false) String userId,
+                               @RequestParam(required = false) String from,
+                               @RequestParam(required = false) String to,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "30") int size) {
-        return ApiResponse.ok(panel.listTransactions(type, userId, page, size));
+        return ApiResponse.ok(panel.listTransactions(splitTypes(types), userId, from, to, page, size));
+    }
+
+    /** Everything that matches the filters in one go (max 50,000 rows) for the Excel download. */
+    @GetMapping("/transactions/export")
+    public Object exportTransactions(@RequestParam(required = false) String types,
+                                     @RequestParam(required = false) String from,
+                                     @RequestParam(required = false) String to) {
+        return ApiResponse.ok(panel.exportTransactions(splitTypes(types), from, to));
+    }
+
+    private static java.util.List<String> splitTypes(String types) {
+        if (types == null || types.isBlank()) return java.util.List.of();
+        return java.util.Arrays.stream(types.split(",")).map(String::trim).filter(t -> !t.isEmpty()).toList();
     }
 }

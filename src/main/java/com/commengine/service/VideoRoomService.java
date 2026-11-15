@@ -54,6 +54,8 @@ public class VideoRoomService {
         VideoRoom room = new VideoRoom();
         room.setTitle(req.getTitle());
         room.setCoverUrl(req.getCoverUrl());
+        room.setCategory(com.commengine.util.Catalog.category(req.getCategory()));
+        room.setLanguage(host.getLanguage());
         room.setChannelName("video-" + UUID.randomUUID());
         room.setHost(host);
         roomRepository.save(room);

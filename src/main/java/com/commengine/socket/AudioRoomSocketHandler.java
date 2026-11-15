@@ -4,6 +4,8 @@ import com.commengine.dto.DtoMapper;
 import com.commengine.entity.*;
 import com.commengine.repository.AudioRoomMemberRepository;
 import com.commengine.repository.AudioRoomRepository;
+import com.commengine.repository.UserRepository;
+import com.commengine.service.EntryEffectService;
 import com.commengine.service.RoomPresenceService;
 import com.commengine.socket.payload.*;
 import com.corundumstudio.socketio.AckRequest;
@@ -33,11 +35,16 @@ public class AudioRoomSocketHandler {
     private final AudioRoomMemberRepository memberRepository;
     private final AudioRoomLiveState state;
     private final RoomPresenceService presence;
+    private final EntryEffectService entryEffects;
+    private final UserRepository userRepository;
     private SocketIOServer server;
 
     public AudioRoomSocketHandler(SocketUserResolver userResolver, AudioRoomRepository audioRoomRepository,
                                   AudioRoomMemberRepository memberRepository, AudioRoomLiveState state,
-                                  RoomPresenceService presence) {
+                                  RoomPresenceService presence, EntryEffectService entryEffects,
+                                  UserRepository userRepository) {
+        this.entryEffects = entryEffects;
+        this.userRepository = userRepository;
         this.userResolver = userResolver;
         this.audioRoomRepository = audioRoomRepository;
         this.memberRepository = memberRepository;
@@ -84,7 +91,7 @@ public class AudioRoomSocketHandler {
                     client.joinRoom("audio-room:" + payload.getRoomId() + ":host");
                 }
                 client.set(CURRENT_ROOM_KEY, payload.getRoomId());
-                state.getMembers(payload.getRoomId()).add(user.getId());
+                boolean newlyJoined = state.getMembers(payload.getRoomId()).add(user.getId());
                 if (room.getType() == RoomType.PUBLIC) {
                     memberRepository.findByRoomIdAndUserId(payload.getRoomId(), user.getId())
                             .filter(m -> m.getLeftAt() != null)
@@ -102,6 +109,11 @@ public class AudioRoomSocketHandler {
                 seatsMsg.put("seats", state.getSeats(payload.getRoomId()));
                 seatsMsg.put("blockedSeats", state.getBlocked(payload.getRoomId()));
                 client.sendEvent("audio:seats-update", seatsMsg);
+
+                // a reconnect re-sends "join": only a genuinely new member triggers their entry effect
+                if (newlyJoined) {
+                    entryEffects.announce("audio-room:" + payload.getRoomId(), "audio", payload.getRoomId(), user.getId());
+                }
             } catch (Exception e) {
                 log.error("audio:join-room-channel error", e);
             }
@@ -143,6 +155,8 @@ public class AudioRoomSocketHandler {
                     return;
                 }
 
+                // re-read the user: the copy cached on the socket may predate a frame purchase
+                User seated = userRepository.findById(user.getId()).orElse(user);
                 Seat[] seats = state.getSeats(payload.getRoomId());
                 synchronized (state) {
                     if (state.getBlocked(payload.getRoomId())[seatIndex]) {
@@ -158,7 +172,7 @@ public class AudioRoomSocketHandler {
                     // caller already holds this seat (e.g. a retried/duplicate emit after a
                     // reconnect) — treat both as success instead of failing on your own seat.
                     state.clearUserFromRoom(payload.getRoomId(), user.getId());
-                    seats[seatIndex] = new Seat(user.getId(), user.getName(), user.getAvatarUrl(), false);
+                    seats[seatIndex] = new Seat(user.getId(), user.getName(), user.getAvatarUrl(), false, seated.activeFrameUrl());
                 }
 
                 upsertMember(room, user, room.getHost().getId().equals(user.getId()) ? MemberRole.HOST : MemberRole.SPEAKER, true);

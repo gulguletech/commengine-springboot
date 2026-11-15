@@ -37,11 +37,13 @@ public class AudioRoomService {
     private final SocketIOServer socketIOServer;
     private final AudioRoomLiveState liveState;
     private final RoomPresenceService presence;
+    private final StoreService storeService;
 
     public AudioRoomService(AudioRoomRepository roomRepository, AudioRoomMemberRepository memberRepository,
                             AudioJoinRequestRepository joinRequestRepository, AgoraService agoraService,
                             SocketIOServer socketIOServer, AudioRoomLiveState liveState,
-                            RoomPresenceService presence) {
+                            RoomPresenceService presence, StoreService storeService) {
+        this.storeService = storeService;
         this.roomRepository = roomRepository;
         this.memberRepository = memberRepository;
         this.joinRequestRepository = joinRequestRepository;
@@ -57,6 +59,9 @@ public class AudioRoomService {
         room.setTitle(req.getTitle());
         room.setType(req.getType());
         room.setCoverUrl(req.getCoverUrl());
+        room.setCategory(com.commengine.util.Catalog.category(req.getCategory()));
+        room.setLanguage(host.getLanguage());
+        storeService.applyRoomBackground(room, host, req.getBackgroundItemId()); // free or owned, else 403
         room.setPasscode(req.getType() == RoomType.PRIVATE ? req.getPasscode() : null);
         room.setChannelName("audio-" + UUID.randomUUID());
         room.setHost(host);
@@ -230,11 +235,26 @@ public class AudioRoomService {
         }
         room.setType(req.getType());
         room.setPasscode(nextPasscode);
+        if (req.getCategory() != null && !req.getCategory().isBlank()) {
+            room.setCategory(com.commengine.util.Catalog.category(req.getCategory()));
+        }
+        if (req.isBackgroundProvided()) {
+            storeService.applyRoomBackground(room, host, req.getBackgroundItemId());
+        }
         roomRepository.save(room);
+
+        if (req.isBackgroundProvided()) {
+            // everyone already in the room switches to the new background immediately
+            Map<String, Object> updated = new LinkedHashMap<>();
+            updated.put("roomId", room.getId());
+            updated.put("background", DtoMapper.roomBackground(room));
+            socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:room-updated", updated);
+        }
 
         Map<String, Object> notify = new LinkedHashMap<>();
         notify.put("roomId", room.getId());
         notify.put("type", room.getType());
+        notify.put("category", room.getCategory());
         notify.put("hasPasscode", room.getPasscode() != null);
         socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:settings-updated", notify);
 
