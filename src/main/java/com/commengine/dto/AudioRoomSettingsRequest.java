@@ -16,6 +16,12 @@ public class AudioRoomSettingsRequest {
     /** Optional: change the room's type (FUN, MUSIC, ...). Null = leave as is. */
     private String category;
 
+    /** Optional: change how many seats the room has (4, 8, 12, 16 or 20). Null = leave as is. */
+    private Integer seatCount;
+
+    public Integer getSeatCount() { return seatCount; }
+    public void setSeatCount(Integer seatCount) { this.seatCount = seatCount; }
+
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
     /** Store background for the room. Send null to remove it; leave the field out to keep the current one. */

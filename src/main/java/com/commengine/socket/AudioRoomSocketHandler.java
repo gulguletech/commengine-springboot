@@ -86,6 +86,7 @@ public class AudioRoomSocketHandler {
                 AudioRoom room = audioRoomRepository.findById(payload.getRoomId()).orElse(null);
                 if (room == null) return;
 
+                state.ensureSeatCount(payload.getRoomId(), room.getSeatCount()); // seats live in memory: size them from the room
                 client.joinRoom("audio-room:" + payload.getRoomId());
                 if (room.getHost().getId().equals(user.getId())) {
                     client.joinRoom("audio-room:" + payload.getRoomId() + ":host");
@@ -131,6 +132,7 @@ public class AudioRoomSocketHandler {
     private DataListener<RoomIdPayload> onGetSeats() {
         return (client, payload, ack) -> {
             if (payload.getRoomId() == null) return;
+            audioRoomRepository.findById(payload.getRoomId()).ifPresent(r -> state.ensureSeatCount(r.getId(), r.getSeatCount()));
             Map<String, Object> seatsMsg = new LinkedHashMap<>();
             seatsMsg.put("roomId", payload.getRoomId());
             seatsMsg.put("seats", state.getSeats(payload.getRoomId()));
@@ -145,7 +147,7 @@ public class AudioRoomSocketHandler {
                 User user = userResolver.currentUser(client);
                 if (user == null) { ackFail(ackRequest, "Not authenticated"); return; }
                 Integer seatIndex = payload.getSeatIndex();
-                if (seatIndex == null || seatIndex < 0 || seatIndex >= AudioRoomLiveState.SEAT_COUNT) {
+                if (seatIndex == null || seatIndex < 0 || seatIndex >= state.seatCount(payload.getRoomId())) {
                     ackFail(ackRequest, "Invalid seat index");
                     return;
                 }
@@ -208,7 +210,7 @@ public class AudioRoomSocketHandler {
                     return;
                 }
                 Integer seatIndex = payload.getSeatIndex();
-                if (seatIndex == null || seatIndex < 0 || seatIndex >= AudioRoomLiveState.SEAT_COUNT) {
+                if (seatIndex == null || seatIndex < 0 || seatIndex >= state.seatCount(payload.getRoomId())) {
                     ackFail(ackRequest, "Invalid seat index");
                     return;
                 }
@@ -262,7 +264,7 @@ public class AudioRoomSocketHandler {
                     return;
                 }
                 Integer idx = payload.getSeatIndex();
-                if (idx == null || idx < 0 || idx >= AudioRoomLiveState.SEAT_COUNT) {
+                if (idx == null || idx < 0 || idx >= state.seatCount(payload.getRoomId())) {
                     ackFail(ackRequest, "Invalid seat index");
                     return;
                 }

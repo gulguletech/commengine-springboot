@@ -137,6 +137,7 @@ public final class DtoMapper {
         m.put("category", r.getCategory() == null ? "FUN" : r.getCategory());
         m.put("language", r.getLanguage());
         m.put("languages", roomLanguages(r.getLanguages(), r.getLanguage()));
+        m.put("seatCount", r.getSeatCount());
         m.put("createdAt", r.getCreatedAt());
         m.put("endedAt", r.getEndedAt());
         m.put("hostId", r.getHost().getId());

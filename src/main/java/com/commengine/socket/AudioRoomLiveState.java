@@ -14,15 +14,64 @@ import java.util.concurrent.CopyOnWriteArraySet;
 @Component
 public class AudioRoomLiveState {
 
-    public static final int SEAT_COUNT = 12;
+    /** Seat counts a room may have. Every one is a multiple of 4 because the app shows 4 seats per row. */
+    public static final int[] ALLOWED_SEAT_COUNTS = {4, 8, 12, 16, 20};
+    public static final int DEFAULT_SEAT_COUNT = 12;
 
+    public static boolean isAllowedSeatCount(int n) {
+        for (int a : ALLOWED_SEAT_COUNTS) if (a == n) return true;
+        return false;
+    }
+
+    private final ConcurrentHashMap<String, Integer> seatCountByRoom = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Seat[]> seatsByRoom = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> membersByRoom = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, boolean[]> blockedByRoom = new ConcurrentHashMap<>();
 
+    /** How many seats this room has right now. */
+    public int seatCount(String roomId) {
+        return seatCountByRoom.getOrDefault(roomId, DEFAULT_SEAT_COUNT);
+    }
+
+    /**
+     * Makes sure the live state knows this room's seat count (it is kept in the database, while seats live in memory
+     * and start empty after a restart). Does nothing if the count is already known and the same.
+     */
+    public synchronized void ensureSeatCount(String roomId, int count) {
+        Integer known = seatCountByRoom.get(roomId);
+        if (known != null && known == count) return;
+        resize(roomId, count);
+    }
+
+    /**
+     * Changes the number of seats. Seats and locks on the remaining positions are kept.
+     * @return the people who were sitting on seats that no longer exist (they are standing now)
+     */
+    public synchronized java.util.List<Seat> resize(String roomId, int newCount) {
+        Seat[] oldSeats = seatsByRoom.get(roomId);
+        boolean[] oldBlocked = blockedByRoom.get(roomId);
+
+        Seat[] seats = new Seat[newCount];
+        boolean[] blocked = new boolean[newCount];
+        java.util.List<Seat> removed = new java.util.ArrayList<>();
+        if (oldSeats != null) {
+            for (int i = 0; i < oldSeats.length; i++) {
+                if (oldSeats[i] == null) continue;
+                if (i < newCount) seats[i] = oldSeats[i];
+                else removed.add(oldSeats[i]);
+            }
+        }
+        if (oldBlocked != null) System.arraycopy(oldBlocked, 0, blocked, 0, Math.min(oldBlocked.length, newCount));
+
+        seatCountByRoom.put(roomId, newCount);
+        seatsByRoom.put(roomId, seats);
+        blockedByRoom.put(roomId, blocked);
+        return removed;
+    }
+
     /** true = the host has locked that seat. */
     public boolean[] getBlocked(String roomId) {
-        return blockedByRoom.computeIfAbsent(roomId, k -> new boolean[SEAT_COUNT]);
+        return blockedByRoom.computeIfAbsent(roomId, k -> new boolean[seatCount(roomId)]);
     }
 
     /** Non-creating lookup (used by cleanup code so it never resurrects an ended room). */
@@ -31,7 +80,7 @@ public class AudioRoomLiveState {
     }
 
     public Seat[] getSeats(String roomId) {
-        return seatsByRoom.computeIfAbsent(roomId, k -> new Seat[SEAT_COUNT]);
+        return seatsByRoom.computeIfAbsent(roomId, k -> new Seat[seatCount(roomId)]);
     }
 
     public Set<String> getMembers(String roomId) {
@@ -61,6 +110,7 @@ public class AudioRoomLiveState {
         seatsByRoom.remove(roomId);
         membersByRoom.remove(roomId);
         blockedByRoom.remove(roomId);
+        seatCountByRoom.remove(roomId);
     }
 
     /** Iterates every room a user might be seated in (used on disconnect). */

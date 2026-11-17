@@ -64,9 +64,11 @@ public class AudioRoomService {
         room.setLanguages(com.commengine.util.Catalog.joinLanguages(host.languageList()));
         storeService.applyRoomBackground(room, host, req.getBackgroundItemId()); // free or owned, else 403
         room.setPasscode(req.getType() == RoomType.PRIVATE ? req.getPasscode() : null);
+        room.setSeatCount(validSeatCount(req.getSeatCount(), AudioRoomLiveState.DEFAULT_SEAT_COUNT));
         room.setChannelName("audio-" + UUID.randomUUID());
         room.setHost(host);
         roomRepository.save(room);
+        liveState.ensureSeatCount(room.getId(), room.getSeatCount());
 
         AudioRoomMember hostMember = new AudioRoomMember();
         hostMember.setRoom(room);
@@ -86,6 +88,15 @@ public class AudioRoomService {
         // one room at a time: starting a room exits any other room the host was in
         presence.leaveOthers(host.getId(), "audio", room.getId());
         return data;
+    }
+
+    /** 4, 8, 12, 16 or 20. `fallback` is used when nothing was sent. */
+    private static int validSeatCount(Integer asked, int fallback) {
+        if (asked == null) return fallback;
+        if (!AudioRoomLiveState.isAllowedSeatCount(asked)) {
+            throw ApiException.badRequest("A room can have 4, 8, 12, 16 or 20 seats");
+        }
+        return asked;
     }
 
     public Map<String, Object> listRooms() {
@@ -242,7 +253,35 @@ public class AudioRoomService {
         if (req.isBackgroundProvided()) {
             storeService.applyRoomBackground(room, host, req.getBackgroundItemId());
         }
+
+        // seat count: resize the live seats; anyone sitting on a seat that disappears becomes a listener
+        boolean seatsChanged = false;
+        List<com.commengine.socket.Seat> displaced = List.of();
+        if (req.getSeatCount() != null) {
+            int next = validSeatCount(req.getSeatCount(), room.getSeatCount());
+            liveState.ensureSeatCount(room.getId(), room.getSeatCount()); // after a restart the live state may not know yet
+            if (next != room.getSeatCount()) {
+                displaced = liveState.resize(room.getId(), next);
+                room.setSeatCount(next);
+                seatsChanged = true;
+            }
+        }
         roomRepository.save(room);
+
+        if (seatsChanged) {
+            for (com.commengine.socket.Seat seat : displaced) {
+                memberRepository.findByRoomIdAndUserId(room.getId(), seat.userId)
+                        .filter(m -> m.getLeftAt() == null)
+                        .ifPresent(m -> { m.setRole(MemberRole.LISTENER); m.setMuted(true); memberRepository.save(m); });
+                socketIOServer.getRoomOperations("user:" + seat.userId)
+                        .sendEvent("audio:removed-from-seat", Map.of("roomId", room.getId()));
+            }
+            Map<String, Object> seatsMsg = new LinkedHashMap<>();
+            seatsMsg.put("roomId", room.getId());
+            seatsMsg.put("seats", liveState.getSeats(room.getId()));
+            seatsMsg.put("blockedSeats", liveState.getBlocked(room.getId()));
+            socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:seats-update", seatsMsg);
+        }
 
         if (req.isBackgroundProvided()) {
             // everyone already in the room switches to the new background immediately
@@ -257,6 +296,7 @@ public class AudioRoomService {
         notify.put("type", room.getType());
         notify.put("category", room.getCategory());
         notify.put("hasPasscode", room.getPasscode() != null);
+        notify.put("seatCount", room.getSeatCount());
         socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:settings-updated", notify);
 
         return Map.of("room", DtoMapper.audioRoomBase(room));
