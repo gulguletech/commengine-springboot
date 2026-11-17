@@ -42,6 +42,11 @@ public class VideoRoomController {
         return ApiResponse.ok(videoRoomService.joinRoom(user, id));
     }
 
+    @GetMapping("/{id}/viewers")
+    public Object getViewers(@CurrentUser User user, @PathVariable String id) {
+        return ApiResponse.ok(videoRoomService.getViewers(user, id));
+    }
+
     @PostMapping("/{id}/leave")
     public Object leaveRoom(@CurrentUser User user, @PathVariable String id) {
         videoRoomService.leaveRoom(user, id);

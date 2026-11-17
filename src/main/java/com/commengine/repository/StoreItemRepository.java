@@ -13,4 +13,6 @@ public interface StoreItemRepository extends JpaRepository<StoreItem, String> {
     List<StoreItem> findAllByOrderByCategoryAscSortOrderAscCreatedAtAsc();
 
     List<StoreItem> findByCategoryOrderBySortOrderAscCreatedAtAsc(StoreCategory category);
+
+    List<StoreItem> findByVipOnlyTrue();
 }

@@ -61,6 +61,7 @@ public class AudioRoomService {
         room.setCoverUrl(req.getCoverUrl());
         room.setCategory(com.commengine.util.Catalog.category(req.getCategory()));
         room.setLanguage(host.getLanguage());
+        room.setLanguages(com.commengine.util.Catalog.joinLanguages(host.languageList()));
         storeService.applyRoomBackground(room, host, req.getBackgroundItemId()); // free or owned, else 403
         room.setPasscode(req.getType() == RoomType.PRIVATE ? req.getPasscode() : null);
         room.setChannelName("audio-" + UUID.randomUUID());

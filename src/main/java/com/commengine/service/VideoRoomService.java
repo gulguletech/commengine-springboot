@@ -11,6 +11,7 @@ import com.commengine.entity.VideoRoomViewer;
 import com.commengine.repository.VideoRoomCommentRepository;
 import com.commengine.repository.VideoRoomRepository;
 import com.commengine.repository.VideoRoomViewerRepository;
+import com.commengine.socket.VideoMicState;
 import com.commengine.util.AgoraUidUtil;
 import com.corundumstudio.socketio.SocketIOServer;
 import org.springframework.data.domain.PageRequest;
@@ -37,10 +38,13 @@ public class VideoRoomService {
     private final AgoraService agoraService;
     private final SocketIOServer socketIOServer;
     private final RoomPresenceService presence;
+    private final VideoMicState micState;
 
     public VideoRoomService(VideoRoomRepository roomRepository, VideoRoomViewerRepository viewerRepository,
                             VideoRoomCommentRepository commentRepository, AgoraService agoraService,
-                            SocketIOServer socketIOServer, RoomPresenceService presence) {
+                            SocketIOServer socketIOServer, RoomPresenceService presence,
+                            VideoMicState micState) {
+        this.micState = micState;
         this.roomRepository = roomRepository;
         this.viewerRepository = viewerRepository;
         this.commentRepository = commentRepository;
@@ -56,6 +60,7 @@ public class VideoRoomService {
         room.setCoverUrl(req.getCoverUrl());
         room.setCategory(com.commengine.util.Catalog.category(req.getCategory()));
         room.setLanguage(host.getLanguage());
+        room.setLanguages(com.commengine.util.Catalog.joinLanguages(host.languageList()));
         room.setChannelName("video-" + UUID.randomUUID());
         room.setHost(host);
         roomRepository.save(room);
@@ -66,6 +71,7 @@ public class VideoRoomService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("room", DtoMapper.videoRoom(room));
         data.put("rtc", rtc);
+        data.put("hostUid", uidNum);
         presence.leaveOthers(host.getId(), "video", room.getId());
         return data;
     }
@@ -115,7 +121,23 @@ public class VideoRoomService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("room", DtoMapper.videoRoom(room));
         data.put("rtc", rtc);
+        // viewers need the host's Agora uid to tell the host's picture from the mic guest's
+        data.put("hostUid", AgoraUidUtil.deriveAgoraUid(room.getHost().getId()));
         return data;
+    }
+
+    /** Who is watching right now: the "invite to mic" picker (host) and the gift recipient list (everyone in the live). */
+    public Map<String, Object> getViewers(User caller, String id) {
+        VideoRoom room = findRoomOrThrow(id);
+        boolean isHost = room.getHost().getId().equals(caller.getId());
+        boolean isWatching = viewerRepository.findByRoomIdAndUserId(id, caller.getId()).filter(v -> v.getLeftAt() == null).isPresent();
+        if (!isHost && !isWatching) {
+            throw ApiException.forbidden("Join the live to see who is watching");
+        }
+        List<Map<String, Object>> viewers = viewerRepository.findActiveWithUser(id).stream()
+                .map(v -> DtoMapper.userBrief(v.getUser()))
+                .collect(Collectors.toList());
+        return Map.of("viewers", viewers);
     }
 
     @Transactional
@@ -136,6 +158,7 @@ public class VideoRoomService {
         // A stream that has ended has no further use — hard-delete it and everything
         // tied to it (viewers, comments) instead of soft-marking it ENDED and leaving
         // the rows around forever with nothing in the app ever reading them again.
+        micState.clearRoom(id);
         commentRepository.deleteAllByRoomId(id);
         viewerRepository.deleteAllByRoomId(id);
         roomRepository.delete(room);

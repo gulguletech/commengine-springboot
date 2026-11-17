@@ -5,6 +5,7 @@ import com.commengine.dto.DtoMapper;
 import com.commengine.entity.*;
 import com.commengine.repository.AudioRoomRepository;
 import com.commengine.repository.DailyRewardDayRepository;
+import com.commengine.repository.LevelConfigRepository;
 import com.commengine.repository.StoreItemRepository;
 import com.commengine.repository.UserItemRepository;
 import com.commengine.repository.UserRepository;
@@ -33,6 +34,9 @@ import java.util.regex.Pattern;
 @Service
 public class StoreService {
 
+    /** Id a room's background carries when it is the host's own uploaded picture (VIP only). */
+    public static final String CUSTOM_BG_ID = "custom";
+
     /** Rental lengths the app offers. */
     public static final List<Integer> DURATIONS = List.of(1, 3, 7, 15, 30);
     private static final long MAX_PRICE_PER_DAY = 1_000_000;
@@ -48,13 +52,15 @@ public class StoreService {
     private final SocketIOServer server;
     private final SocketUserResolver socketUserResolver;
     private final DailyRewardDayRepository dailyRewardDays;
+    private final LevelConfigRepository levelConfigs;
 
     public StoreService(StoreItemRepository itemRepository, UserItemRepository userItemRepository,
                         UserRepository userRepository, AudioRoomRepository roomRepository,
                         WalletService walletService, CloudinaryService cloudinaryService,
                         SocketIOServer server, SocketUserResolver socketUserResolver,
-                        DailyRewardDayRepository dailyRewardDays) {
+                        DailyRewardDayRepository dailyRewardDays, LevelConfigRepository levelConfigs) {
         this.dailyRewardDays = dailyRewardDays;
+        this.levelConfigs = levelConfigs;
         this.itemRepository = itemRepository;
         this.userItemRepository = userItemRepository;
         this.userRepository = userRepository;
@@ -72,14 +78,16 @@ public class StoreService {
     public Map<String, Object> catalog(User user, StoreCategory category) {
         User me = freshUser(user.getId());
         Map<String, UserItem> owned = ownedByItem(me.getId());
+        boolean vip = me.isVip();
         List<Map<String, Object>> items = itemRepository
                 .findByCategoryAndActiveTrueOrderBySortOrderAscCreatedAtAsc(category).stream()
-                .map(i -> appJson(i, me, owned.get(i.getId()))).toList();
+                .map(i -> appJson(i, me, owned.get(i.getId()), vip)).toList();
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("category", category);
         res.put("items", items);
         res.put("durations", DURATIONS);
         res.put("wallet", walletService.getBalance(me.getId()));
+        res.put("isVip", vip);
         return res;
     }
 
@@ -93,7 +101,7 @@ public class StoreService {
         List<Map<String, Object>> list = new ArrayList<>();
         for (UserItem ui : mine) {
             StoreItem item = items.get(ui.getItemId());
-            if (item != null) list.add(appJson(item, me, ui));
+            if (item != null && !item.isVipOnly()) list.add(appJson(item, me, ui, me.isVip()));
         }
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("items", list);
@@ -101,24 +109,80 @@ public class StoreService {
         return res;
     }
 
-    /** Backgrounds this user may put in a room: every free one plus the paid ones they still own. */
+    /**
+     * Backgrounds this user may put in a room: their own uploaded picture (VIP), every free one, the paid ones they still
+     * own, and every VIP one (usable for VIP members; shown locked for everyone else so they can find the VIP page).
+     */
     @Transactional(readOnly = true)
     public List<Map<String, Object>> usableBackgrounds(User user) {
-        Map<String, UserItem> owned = ownedByItem(user.getId());
+        User me = freshUser(user.getId());
+        boolean vip = me.isVip();
+        Map<String, UserItem> owned = ownedByItem(me.getId());
         List<Map<String, Object>> out = new ArrayList<>();
+
+        if (vip && me.getCustomBgUrl() != null) out.add(customJson(me));
+
         for (StoreItem i : itemRepository.findByCategoryAndActiveTrueOrderBySortOrderAscCreatedAtAsc(StoreCategory.BACKGROUND)) {
             UserItem ui = owned.get(i.getId());
-            if (i.isFree() || (ui != null && ui.isActive())) out.add(appJson(i, null, ui));
+            if (i.isVipOnly() || i.isFree() || (ui != null && ui.isActive())) out.add(appJson(i, null, ui, vip));
         }
         // paid backgrounds the admin has since switched off stay usable until the rental ends
         for (UserItem ui : owned.values()) {
             if (!ui.isActive()) continue;
             if (out.stream().anyMatch(m -> ui.getItemId().equals(m.get("id")))) continue;
             itemRepository.findById(ui.getItemId())
-                    .filter(i -> i.getCategory() == StoreCategory.BACKGROUND && !i.isFree())
-                    .ifPresent(i -> out.add(appJson(i, null, ui)));
+                    .filter(i -> i.getCategory() == StoreCategory.BACKGROUND && !i.isFree() && !i.isVipOnly())
+                    .ifPresent(i -> out.add(appJson(i, null, ui, vip)));
         }
         return out;
+    }
+
+    /** The VIP member's own uploaded picture, shaped like a store background so the picker can treat it the same. */
+    private static Map<String, Object> customJson(User me) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", CUSTOM_BG_ID);
+        m.put("category", StoreCategory.BACKGROUND);
+        m.put("name", "My background");
+        m.put("free", false);
+        m.put("vipOnly", true);
+        m.put("pricePerDay", 0);
+        m.put("imageUrl", bgFull(me.getCustomBgUrl()));
+        m.put("thumbUrl", bgThumb(me.getCustomBgUrl()));
+        m.put("videoUrl", null);
+        m.put("textColor", null);
+        m.put("scrim", 0.35);
+        m.put("usable", true);
+        m.put("expiresAt", me.getVipExpiresAt() == null ? null : me.getVipExpiresAt().toString());
+        m.put("equipped", false);
+        return m;
+    }
+
+    /** Full-size / thumbnail versions of an uploaded background (Cloudinary resizes on the fly). */
+    public static String bgFull(String url) { return transform(url, "c_fill,w_1080,h_1920,f_jpg,q_auto"); }
+    public static String bgThumb(String url) { return transform(url, "c_fill,w_270,h_480,f_jpg,q_auto"); }
+
+    /**
+     * A VIP membership was bought / extended: everything VIP-only that the user is wearing or has in a room now lasts
+     * as long as the new membership.
+     */
+    @Transactional
+    public void extendVipBenefits(String userId, Instant vipUntil) {
+        User me = freshUser(userId);
+        boolean changed = false;
+        if (me.getFrameItemId() != null && isVipItem(me.getFrameItemId())) { me.setFrameExpiresAt(vipUntil); changed = true; }
+        if (me.getBubbleItemId() != null && isVipItem(me.getBubbleItemId())) { me.setBubbleExpiresAt(vipUntil); changed = true; }
+        if (me.getEntryItemId() != null && isVipItem(me.getEntryItemId())) { me.setEntryExpiresAt(vipUntil); changed = true; }
+        if (changed) userRepository.save(me);
+
+        roomRepository.extendBackground(userId, CUSTOM_BG_ID, vipUntil);
+        for (StoreItem i : itemRepository.findByVipOnlyTrue()) {
+            if (i.getCategory() == StoreCategory.BACKGROUND) roomRepository.extendBackground(userId, i.getId(), vipUntil);
+        }
+        socketUserResolver.refreshClients(server, me);
+    }
+
+    private boolean isVipItem(String itemId) {
+        return itemRepository.findById(itemId).map(StoreItem::isVipOnly).orElse(false);
     }
 
     @Transactional
@@ -171,7 +235,7 @@ public class StoreService {
     @Transactional
     public Map<String, Object> grantReward(String userId, String itemId, int days) {
         StoreItem item = itemRepository.findById(itemId).orElse(null);
-        if (item == null || item.isFree() || days < 1) return null;
+        if (item == null || item.isFree() || item.isVipOnly() || days < 1) return null;
         Instant now = Instant.now();
         Instant base = userItemRepository.findByUserIdAndItemId(userId, item.getId())
                 .map(UserItem::getExpiresAt).filter(e -> e.isAfter(now)).orElse(now);
@@ -240,6 +304,17 @@ public class StoreService {
             room.setBackgroundExpiresAt(null);
             return;
         }
+        if (CUSTOM_BG_ID.equals(itemId)) {
+            User h = freshUser(host.getId());
+            if (!h.isVip()) throw ApiException.forbidden("Uploading your own background is for VIP members");
+            if (h.getCustomBgUrl() == null) throw ApiException.badRequest("Upload a background picture first");
+            room.setBackgroundItemId(CUSTOM_BG_ID);
+            room.setBackgroundUrl(bgFull(h.getCustomBgUrl()));
+            room.setBackgroundThumbUrl(bgThumb(h.getCustomBgUrl()));
+            room.setBackgroundScrim(0.35);
+            room.setBackgroundExpiresAt(h.getVipExpiresAt());
+            return;
+        }
         StoreItem item = itemRepository.findById(itemId).orElseThrow(() -> ApiException.notFound("Background not found"));
         if (item.getCategory() != StoreCategory.BACKGROUND) throw ApiException.badRequest("That item is not a room background");
         Instant expiry = usableUntil(host.getId(), item);
@@ -268,6 +343,7 @@ public class StoreService {
         if (!DURATIONS.contains(days)) throw ApiException.badRequest("Choose " + DURATIONS + " days");
         StoreItem item = itemRepository.findById(itemId).filter(StoreItem::isActive)
                 .orElseThrow(() -> ApiException.badRequest("This item is no longer available"));
+        if (item.isVipOnly()) throw ApiException.forbidden("This item is for VIP members only");
         if (item.isFree()) throw ApiException.badRequest("This item is free - no need to buy it");
         return item;
     }
@@ -310,6 +386,12 @@ public class StoreService {
      * Throws if they may not.
      */
     private Instant usableUntil(String userId, StoreItem item) {
+        if (item.isVipOnly()) {
+            if (!item.isActive()) throw ApiException.badRequest("This item is no longer available");
+            Instant until = freshUser(userId).getVipExpiresAt();
+            if (until == null || !until.isAfter(Instant.now())) throw ApiException.forbidden("This item is for VIP members only");
+            return until; // lasts as long as the membership
+        }
         if (item.isFree()) {
             if (!item.isActive()) throw ApiException.badRequest("This item is no longer available");
             return null;
@@ -334,15 +416,16 @@ public class StoreService {
         m.put("videoUrl", i.getVideoUrl());
         m.put("textColor", i.getTextColor());
         m.put("scrim", i.getScrim());
+        m.put("vipOnly", i.isVipOnly());
         return m;
     }
 
     /** publicJson + this user's state: usable, when the rental ends, and whether it is being worn. */
-    private static Map<String, Object> appJson(StoreItem i, User me, UserItem ui) {
+    private static Map<String, Object> appJson(StoreItem i, User me, UserItem ui, boolean vip) {
         Map<String, Object> m = publicJson(i);
         boolean rented = ui != null && ui.isActive();
-        m.put("usable", i.isFree() || rented);
-        m.put("expiresAt", rented ? ui.getExpiresAt().toString() : null);
+        m.put("usable", i.isVipOnly() ? vip : (i.isFree() || rented));
+        m.put("expiresAt", i.isVipOnly() ? null : (rented ? ui.getExpiresAt().toString() : null));
         m.put("equipped", me != null && isWorn(me, i));
         return m;
     }
@@ -409,13 +492,13 @@ public class StoreService {
     }
 
     @Transactional
-    public Map<String, Object> adminCreate(StoreCategory category, String name, boolean free, Long pricePerDay,
+    public Map<String, Object> adminCreate(StoreCategory category, String name, boolean free, Long pricePerDay, boolean vipOnly,
                                            Integer sortOrder, String textColor, Double scrim,
                                            MultipartFile image, MultipartFile preview, MultipartFile video) {
         StoreItem item = new StoreItem();
         item.setCategory(category);
         item.setName(cleanName(name));
-        applyPrice(item, free, pricePerDay);
+        if (vipOnly) markVipOnly(item); else applyPrice(item, free, pricePerDay);
         item.setSortOrder(sortOrder == null ? 0 : sortOrder);
         applyExtras(item, textColor, scrim);
 
@@ -458,15 +541,23 @@ public class StoreService {
     }
 
     @Transactional
-    public Map<String, Object> adminUpdate(String id, String name, Boolean free, Long pricePerDay, Integer sortOrder,
+    public Map<String, Object> adminUpdate(String id, String name, Boolean free, Long pricePerDay, Boolean vipOnly, Integer sortOrder,
                                            Boolean active, String textColor, Double scrim,
                                            MultipartFile image, MultipartFile preview, MultipartFile video) {
         StoreItem item = itemRepository.findById(id).orElseThrow(() -> ApiException.notFound("Item not found"));
         StoreCategory category = item.getCategory();
         boolean wasFree = item.isFree();
+        boolean wasVip = item.isVipOnly();
+        boolean nowVip = vipOnly != null ? vipOnly : wasVip;
 
         if (name != null) item.setName(cleanName(name));
-        if (free != null || pricePerDay != null) {
+        if (nowVip) {
+            markVipOnly(item);
+        } else if (wasVip) {
+            // VIP-only -> normal item: it needs a normal price (or to be free) again
+            item.setVipOnly(false);
+            applyPrice(item, free != null && free, pricePerDay);
+        } else if (free != null || pricePerDay != null) {
             applyPrice(item, free != null ? free : item.isFree(), pricePerDay != null ? pricePerDay : (item.getPricePerDay() > 0 ? item.getPricePerDay() : null));
         }
         if (sortOrder != null) item.setSortOrder(sortOrder);
@@ -510,8 +601,8 @@ public class StoreService {
         toDelete.forEach(d -> cloudinaryService.delete(d[0], d[1]));
 
         // keep the copies on users / rooms in step with the shelf
-        if (wasFree != item.isFree() || (item.isFree() && !item.isActive())) {
-            // free <-> paid changed (or a free item was switched off): nobody keeps wearing it on the old terms
+        if (wasVip != item.isVipOnly() || wasFree != item.isFree() || (item.isFree() && !item.isActive())) {
+            // free <-> paid <-> VIP changed (or a free item was switched off): nobody keeps wearing it on the old terms
             clearEverywhere(item.getId());
         } else {
             refreshEverywhere(item);
@@ -525,6 +616,7 @@ public class StoreService {
         clearEverywhere(item.getId());
         userItemRepository.deleteByItemId(item.getId());
         dailyRewardDays.clearItem(item.getId(), DailyRewardType.NONE); // reward days that gave it become "not set"
+        levelConfigs.clearItem(item.getId(), DailyRewardType.NONE);    // level rewards that gave it become "no reward"
         itemRepository.delete(item);
         cloudinaryService.delete(item.getImagePublicId(), "image");
         cloudinaryService.delete(item.getVideoPublicId(), "video");
@@ -552,6 +644,13 @@ public class StoreService {
         String n = name == null ? "" : name.trim();
         if (n.isEmpty() || n.length() > 60) throw ApiException.unprocessable("Name must be 1-60 characters");
         return n;
+    }
+
+    /** VIP-exclusive items are never for sale and never "free for everyone". */
+    private static void markVipOnly(StoreItem item) {
+        item.setVipOnly(true);
+        item.setFree(false);
+        item.setPricePerDay(0);
     }
 
     private static void applyPrice(StoreItem item, boolean free, Long pricePerDay) {

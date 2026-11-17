@@ -4,6 +4,7 @@ import com.commengine.common.ApiResponse;
 import com.commengine.dto.UpdateMeRequest;
 import com.commengine.entity.User;
 import com.commengine.security.CurrentUser;
+import com.commengine.service.UserDetailsService;
 import com.commengine.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -14,9 +15,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class UserController {
 
     private final UserService userService;
+    private final UserDetailsService detailsService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserDetailsService detailsService) {
         this.userService = userService;
+        this.detailsService = detailsService;
     }
 
     // GET /api/users?search=xyz
@@ -35,6 +38,12 @@ public class UserController {
     @PostMapping("/me/avatar")
     public Object updateAvatar(@CurrentUser User user, @RequestParam("avatar") MultipartFile avatar) {
         return ApiResponse.ok(userService.updateAvatar(user, avatar), "Avatar updated");
+    }
+
+    // GET /api/users/:id/details  (the full profile card: level, stats, live now)
+    @GetMapping("/{id}/details")
+    public Object getUserDetails(@PathVariable String id) {
+        return ApiResponse.ok(detailsService.details(id));
     }
 
     // GET /api/users/:id

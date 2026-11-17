@@ -36,4 +36,32 @@ public final class Catalog {
         for (String l : LANGUAGES) if (l.equalsIgnoreCase(t)) return l;
         throw ApiException.badRequest("Unknown language: " + raw);
     }
+
+    /** Validates a list of languages: each must be in LANGUAGES, duplicates dropped, order kept. Null -> null (not given). */
+    public static List<String> languages(List<String> raw) {
+        if (raw == null) return null;
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        for (String r : raw) {
+            String l = language(r);
+            if (l != null) out.add(l);
+        }
+        if (out.size() > LANGUAGES.size()) throw ApiException.badRequest("Too many languages");
+        return new java.util.ArrayList<>(out);
+    }
+
+    /** Stored form: "Hindi,Telugu". */
+    public static String joinLanguages(List<String> list) {
+        return list == null || list.isEmpty() ? null : String.join(",", list);
+    }
+
+    /** All languages of a user: the new list if set, otherwise the old single value (accounts made before multi-language). */
+    public static List<String> languageList(String csv, String legacySingle) {
+        List<String> out = new java.util.ArrayList<>();
+        if (csv != null && !csv.isBlank()) {
+            for (String t : csv.split(",")) if (!t.isBlank()) out.add(t.trim());
+        } else if (legacySingle != null && !legacySingle.isBlank()) {
+            out.add(legacySingle.trim());
+        }
+        return out;
+    }
 }

@@ -19,6 +19,9 @@ public interface AudioRoomRepository extends JpaRepository<AudioRoom, String> {
 
     long countByStatus(RoomStatus status);
 
+    /** The newest room this user is hosting right now, if any. */
+    java.util.Optional<AudioRoom> findFirstByHostIdAndStatusOrderByCreatedAtDesc(String hostId, RoomStatus status);
+
     // ---- store backgrounds: keep the denormalised copy on rooms in step with the shelf ----
 
     @Modifying
@@ -33,4 +36,9 @@ public interface AudioRoomRepository extends JpaRepository<AudioRoom, String> {
     @Modifying
     @Query("update AudioRoom r set r.backgroundExpiresAt = :at where r.host.id = :hostId and r.backgroundItemId = :itemId")
     int extendBackground(@Param("hostId") String hostId, @Param("itemId") String itemId, @Param("at") java.time.Instant at);
+
+    /** A VIP member uploaded a new custom background: show it in every room of theirs that uses the custom one. */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("update AudioRoom r set r.backgroundUrl = :url, r.backgroundThumbUrl = :thumb where r.host.id = :hostId and r.backgroundItemId = 'custom'")
+    int refreshCustomBackground(@Param("hostId") String hostId, @Param("url") String url, @Param("thumb") String thumb);
 }

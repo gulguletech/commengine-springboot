@@ -38,6 +38,10 @@ public class VideoRoom {
     @Column(length = 30)
     private String language;
 
+    /** Every language the host speaks when the room was created ("Hindi,Telugu"). Home's language filter matches on any of them. */
+    @Column(name = "languages", length = 300)
+    private String languages;
+
     @Column(nullable = false)
     private int viewerCount = 0;
 

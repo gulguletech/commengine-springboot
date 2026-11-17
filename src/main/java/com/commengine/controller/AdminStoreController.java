@@ -39,6 +39,7 @@ public class AdminStoreController {
     /**
      * multipart:
      *   category (FRAME|BUBBLE|BACKGROUND|ENTRY_EFFECT), name, free (true/false), pricePerDay (coins, when not free),
+     *   vipOnly (true = free for VIP members only, not for sale, price ignored),
      *   sortOrder?, textColor? (BUBBLE, #RRGGBB), scrim? (BACKGROUND, 0..0.8)
      *   files: image (FRAME / BUBBLE / BACKGROUND)  |  preview + video (ENTRY_EFFECT)
      */
@@ -47,13 +48,14 @@ public class AdminStoreController {
                          @RequestParam("name") String name,
                          @RequestParam(value = "free", defaultValue = "false") boolean free,
                          @RequestParam(value = "pricePerDay", required = false) Long pricePerDay,
+                         @RequestParam(value = "vipOnly", defaultValue = "false") boolean vipOnly,
                          @RequestParam(value = "sortOrder", required = false) Integer sortOrder,
                          @RequestParam(value = "textColor", required = false) String textColor,
                          @RequestParam(value = "scrim", required = false) Double scrim,
                          @RequestParam(value = "image", required = false) MultipartFile image,
                          @RequestParam(value = "preview", required = false) MultipartFile preview,
                          @RequestParam(value = "video", required = false) MultipartFile video) {
-        return ApiResponse.ok(storeService.adminCreate(parse(category), name, free, pricePerDay, sortOrder, textColor, scrim,
+        return ApiResponse.ok(storeService.adminCreate(parse(category), name, free, pricePerDay, vipOnly, sortOrder, textColor, scrim,
                 image, preview, video), "Item added");
     }
 
@@ -63,6 +65,7 @@ public class AdminStoreController {
                          @RequestParam(value = "name", required = false) String name,
                          @RequestParam(value = "free", required = false) Boolean free,
                          @RequestParam(value = "pricePerDay", required = false) Long pricePerDay,
+                         @RequestParam(value = "vipOnly", required = false) Boolean vipOnly,
                          @RequestParam(value = "sortOrder", required = false) Integer sortOrder,
                          @RequestParam(value = "active", required = false) Boolean active,
                          @RequestParam(value = "textColor", required = false) String textColor,
@@ -70,7 +73,7 @@ public class AdminStoreController {
                          @RequestParam(value = "image", required = false) MultipartFile image,
                          @RequestParam(value = "preview", required = false) MultipartFile preview,
                          @RequestParam(value = "video", required = false) MultipartFile video) {
-        return ApiResponse.ok(storeService.adminUpdate(id, name, free, pricePerDay, sortOrder, active, textColor, scrim,
+        return ApiResponse.ok(storeService.adminUpdate(id, name, free, pricePerDay, vipOnly, sortOrder, active, textColor, scrim,
                 image, preview, video), "Item updated");
     }
 

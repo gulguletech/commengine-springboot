@@ -59,6 +59,10 @@ public class StoreItem {
     @Column(name = "scrim")
     private Double scrim;
 
+    /** VIP-exclusive: free for active VIP members, not for sale to anyone else. Price is ignored. */
+    @Column(name = "vip_only", nullable = false, columnDefinition = "boolean default false")
+    private boolean vipOnly = false;
+
     @Column(nullable = false)
     private boolean active = true;
 

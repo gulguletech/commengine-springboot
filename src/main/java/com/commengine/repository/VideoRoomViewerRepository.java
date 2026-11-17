@@ -14,6 +14,9 @@ public interface VideoRoomViewerRepository extends JpaRepository<VideoRoomViewer
     List<VideoRoomViewer> findByUserIdAndLeftAtIsNull(String userId);
     long countByRoomIdAndLeftAtIsNull(String roomId);
 
+    @Query("select v from VideoRoomViewer v join fetch v.user where v.room.id = :roomId and v.leftAt is null order by v.joinedAt desc")
+    List<VideoRoomViewer> findActiveWithUser(@Param("roomId") String roomId);
+
     @Modifying
     @Query("delete from VideoRoomViewer v where v.room.id = :roomId")
     void deleteAllByRoomId(@Param("roomId") String roomId);

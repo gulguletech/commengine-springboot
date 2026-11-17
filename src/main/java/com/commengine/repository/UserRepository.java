@@ -81,4 +81,6 @@ public interface UserRepository extends JpaRepository<User, String> {
     @Modifying
     @Query("update User u set u.entryExpiresAt = :at where u.id = :userId and u.entryItemId = :itemId")
     int extendEntry(@Param("userId") String userId, @Param("itemId") String itemId, @Param("at") Instant at);
+
+    long countByVipExpiresAtAfter(java.time.Instant now);
 }

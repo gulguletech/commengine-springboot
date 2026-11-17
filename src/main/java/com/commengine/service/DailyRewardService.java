@@ -182,6 +182,9 @@ public class DailyRewardService {
             if (itemId == null || itemId.isBlank()) throw ApiException.unprocessable("Choose a store item");
             Map<String, Object> item = store.describe(itemId.trim());
             if (item == null) throw ApiException.notFound("That store item no longer exists");
+            if (Boolean.TRUE.equals(item.get("vipOnly"))) {
+                throw ApiException.unprocessable("That item is for VIP members only, so it can't be a reward. Pick another item.");
+            }
             if (Boolean.TRUE.equals(item.get("free"))) {
                 throw ApiException.unprocessable("Free items are already available to everyone. Pick a paid item.");
             }

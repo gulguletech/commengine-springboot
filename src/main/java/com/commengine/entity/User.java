@@ -42,6 +42,36 @@ public class User {
     @Column(length = 30)
     private String language;
 
+    /** Every language the user speaks, comma separated ("Hindi,Telugu"). `language` keeps the first one for older app versions. */
+    @Column(name = "languages", length = 300)
+    private String languages;
+
+    /** All languages the user speaks (falls back to the old single `language`). */
+    public java.util.List<String> languageList() {
+        return com.commengine.util.Catalog.languageList(languages, language);
+    }
+
+    /** Sets the full list; `language` becomes the first entry. */
+    public void applyLanguages(java.util.List<String> list) {
+        this.languages = com.commengine.util.Catalog.joinLanguages(list);
+        this.language = list == null || list.isEmpty() ? null : list.get(0);
+    }
+
+    /** VIP membership ends at this moment. null / in the past = not a VIP member. */
+    @Column(name = "vip_expires_at")
+    private java.time.Instant vipExpiresAt;
+
+    /** The picture a VIP member uploaded to use as a room background. */
+    @Column(name = "custom_bg_url", length = 600)
+    private String customBgUrl;
+
+    @Column(name = "custom_bg_public_id", length = 300)
+    private String customBgPublicId;
+
+    public boolean isVip() {
+        return vipExpiresAt != null && vipExpiresAt.isAfter(java.time.Instant.now());
+    }
+
     private String avatarUrl;
 
     @Column(nullable = false)

@@ -303,7 +303,7 @@ public class AdminPanelService {
         m.put("phone", u.getPhone());
         m.put("age", u.getAge());
         m.put("gender", u.getGender());
-        m.put("language", u.getLanguage());
+        m.put("language", u.languageList().isEmpty() ? null : String.join(", ", u.languageList()));
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("isVerified", u.isVerified());
         m.put("isOnline", u.isOnline());

@@ -12,6 +12,7 @@ import com.commengine.repository.AudioRoomRepository;
 import com.commengine.repository.GiftRepository;
 import com.commengine.repository.UserRepository;
 import com.commengine.repository.VideoRoomRepository;
+import com.commengine.repository.VideoRoomViewerRepository;
 import com.commengine.socket.AudioRoomLiveState;
 import com.corundumstudio.socketio.SocketIOServer;
 import org.springframework.stereotype.Service;
@@ -40,15 +41,21 @@ public class GiftService {
     private final UserRepository userRepository;
     private final AudioRoomRepository audioRoomRepository;
     private final VideoRoomRepository videoRoomRepository;
+    private final VideoRoomViewerRepository videoViewerRepository;
     private final AudioRoomLiveState audioState;
     private final SocketIOServer server;
     private final GiftRepository giftRepository;
     private final CloudinaryService cloudinaryService;
+    private final LevelService levelService;
+    private final RankingService rankingService;
 
     public GiftService(WalletService walletService, UserRepository userRepository,
                        AudioRoomRepository audioRoomRepository, VideoRoomRepository videoRoomRepository,
                        AudioRoomLiveState audioState, SocketIOServer server,
-                       GiftRepository giftRepository, CloudinaryService cloudinaryService) {
+                       GiftRepository giftRepository, CloudinaryService cloudinaryService,
+                       LevelService levelService, RankingService rankingService,
+                       VideoRoomViewerRepository videoViewerRepository) {
+        this.videoViewerRepository = videoViewerRepository;
         this.walletService = walletService;
         this.userRepository = userRepository;
         this.audioRoomRepository = audioRoomRepository;
@@ -57,6 +64,8 @@ public class GiftService {
         this.server = server;
         this.giftRepository = giftRepository;
         this.cloudinaryService = cloudinaryService;
+        this.levelService = levelService;
+        this.rankingService = rankingService;
     }
 
     // ------------------------------------------------------------------ app side
@@ -216,6 +225,10 @@ public class GiftService {
         g.setVideoPublicId(up.publicId());
     }
 
+    private boolean isWatching(String roomId, String userId) {
+        return videoViewerRepository.findByRoomIdAndUserId(roomId, userId).filter(v -> v.getLeftAt() == null).isPresent();
+    }
+
     @Transactional
     public Map<String, Object> send(User sender, SendGiftRequest req) {
         Gift gift = giftRepository.findById(req.getGiftId()).filter(Gift::isActive)
@@ -239,7 +252,15 @@ public class GiftService {
         } else if ("video".equals(req.getRoomKind())) {
             VideoRoom room = videoRoomRepository.findById(req.getRoomId()).orElse(null);
             if (room == null || room.getStatus() != RoomStatus.ACTIVE) throw ApiException.notFound("Live room not found or ended");
-            if (!room.getHost().getId().equals(receiver.getId())) throw ApiException.badRequest("Gifts in a live stream go to the host");
+            // Same rule as an audio room: anyone in the stream can gift anyone in the stream (host, the mic guest,
+            // other viewers, themselves included).
+            String hostId = room.getHost().getId();
+            if (!hostId.equals(sender.getId()) && !isWatching(room.getId(), sender.getId())) {
+                throw ApiException.forbidden("Join the live to send gifts");
+            }
+            if (!hostId.equals(receiver.getId()) && !isWatching(room.getId(), receiver.getId())) {
+                throw ApiException.badRequest("That person is no longer in the live");
+            }
             channel = "video-room:" + room.getId();
         } else {
             throw ApiException.badRequest("roomKind must be 'audio' or 'video'");
@@ -254,6 +275,10 @@ public class GiftService {
                 "Sent " + count + "x " + gift.getName() + " to " + receiver.getName());
         walletService.adjust(receiver.getId(), WalletService.BEANS, beans, "GIFT_RECEIVED", ref,
                 "Got " + count + "x " + gift.getName() + " from " + sender.getName());
+
+        // Gifts received raise the receiver's level. Sending a gift to yourself doesn't count (no farming levels).
+        if (!sender.getId().equals(receiver.getId())) levelService.addReceived(receiver.getId(), total);
+        rankingService.record(sender.getId(), receiver.getId(), total); // feeds Star list / Contribution list
 
         Map<String, Object> giftJson = toJson(gift);
 

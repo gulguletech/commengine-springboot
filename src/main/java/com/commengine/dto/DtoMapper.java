@@ -38,6 +38,11 @@ public final class DtoMapper {
         return b;
     }
 
+    /** Languages of a room = every language its host spoke when it was created (old rooms: their single language). */
+    private static List<String> roomLanguages(String csv, String legacySingle) {
+        return com.commengine.util.Catalog.languageList(csv, legacySingle);
+    }
+
     // ---- User shapes -------------------------------------------------
 
     /** Full user record (matches Prisma's default `user.findUnique`/`update` — every scalar column). */
@@ -50,6 +55,9 @@ public final class DtoMapper {
         m.put("age", u.getAge());
         m.put("gender", u.getGender());
         m.put("language", u.getLanguage());
+        m.put("languages", u.languageList());
+        m.put("isVip", u.isVip());
+        m.put("vipExpiresAt", u.isVip() ? u.getVipExpiresAt().toString() : null);
         m.put("bio", u.getBio());
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("isVerified", u.isVerified());
@@ -90,6 +98,7 @@ public final class DtoMapper {
         m.put("bio", u.getBio());
         m.put("gender", u.getGender());
         m.put("language", u.getLanguage());
+        m.put("languages", u.languageList());
         m.put("isOnline", u.isOnline());
         m.put("lastSeen", u.getLastSeen());
         m.put("createdAt", u.getCreatedAt());
@@ -108,6 +117,7 @@ public final class DtoMapper {
         m.put("age", u.getAge());
         m.put("gender", u.getGender());
         m.put("language", u.getLanguage());
+        m.put("languages", u.languageList());
         m.put("isOnline", u.isOnline());
         putCosmetics(m, u);
         return m;
@@ -126,6 +136,7 @@ public final class DtoMapper {
         m.put("coverUrl", r.getCoverUrl());
         m.put("category", r.getCategory() == null ? "FUN" : r.getCategory());
         m.put("language", r.getLanguage());
+        m.put("languages", roomLanguages(r.getLanguages(), r.getLanguage()));
         m.put("createdAt", r.getCreatedAt());
         m.put("endedAt", r.getEndedAt());
         m.put("hostId", r.getHost().getId());
@@ -182,6 +193,7 @@ public final class DtoMapper {
         m.put("coverUrl", r.getCoverUrl());
         m.put("category", r.getCategory() == null ? "FUN" : r.getCategory());
         m.put("language", r.getLanguage());
+        m.put("languages", roomLanguages(r.getLanguages(), r.getLanguage()));
         m.put("viewerCount", r.getViewerCount());
         m.put("createdAt", r.getCreatedAt());
         m.put("endedAt", r.getEndedAt());

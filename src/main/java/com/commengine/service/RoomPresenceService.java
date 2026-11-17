@@ -9,6 +9,7 @@ import com.commengine.repository.VideoRoomCommentRepository;
 import com.commengine.repository.VideoRoomRepository;
 import com.commengine.repository.VideoRoomViewerRepository;
 import com.commengine.socket.AudioRoomLiveState;
+import com.commengine.socket.VideoMicState;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import org.springframework.stereotype.Service;
@@ -40,10 +41,13 @@ public class RoomPresenceService {
     private final VideoRoomViewerRepository viewers;
     private final VideoRoomCommentRepository comments;
     private final SocketIOServer server;
+    private final VideoMicState micState;
 
     public RoomPresenceService(AudioRoomLiveState state, AudioRoomMemberRepository audioMembers,
                                VideoRoomRepository videoRooms, VideoRoomViewerRepository viewers,
-                               VideoRoomCommentRepository comments, SocketIOServer server) {
+                               VideoRoomCommentRepository comments, SocketIOServer server,
+                               VideoMicState micState) {
+        this.micState = micState;
         this.state = state;
         this.audioMembers = audioMembers;
         this.videoRooms = videoRooms;
@@ -118,6 +122,9 @@ public class RoomPresenceService {
         room.setViewerCount((int) count);
         videoRooms.save(room);
 
+        // if they were on the mic / had asked for it, free it so the screen un-splits
+        micState.userLeft(roomId, userId, room.getHost().getId());
+
         for (SocketIOClient c : userClients(userId)) c.leaveRoom("video-room:" + roomId);
         broadcastViewerCount(roomId, count);
     }
@@ -127,6 +134,7 @@ public class RoomPresenceService {
     public void endVideoRoom(VideoRoom room) {
         String id = room.getId();
         server.getRoomOperations("video-room:" + id).sendEvent("video:room-ended", Map.of("roomId", id));
+        micState.clearRoom(id);
         comments.deleteAllByRoomId(id);
         viewers.deleteAllByRoomId(id);
         videoRooms.delete(room);

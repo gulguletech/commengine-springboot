@@ -75,7 +75,8 @@ public class AuthService {
         user.setAge(req.getAge());
         user.setGender(req.getGender());
         user.setBio(req.getBio());
-        user.setLanguage(com.commengine.util.Catalog.language(req.getLanguage()));
+        if (req.getLanguages() != null) user.applyLanguages(com.commengine.util.Catalog.languages(req.getLanguages()));
+        else user.applyLanguages(com.commengine.util.Catalog.languages(java.util.Collections.singletonList(req.getLanguage())));
         user.setPublicId(publicIdService.generate());
         user.setVerified(true);
         user.setOnline(true);

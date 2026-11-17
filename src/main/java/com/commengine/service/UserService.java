@@ -33,7 +33,13 @@ public class UserService {
         if (req.getName() != null) user.setName(req.getName());
         if (req.getBio() != null) user.setBio(req.getBio());
         if (req.getGender() != null) user.setGender(req.getGender());
-        if (req.getLanguage() != null) user.setLanguage(com.commengine.util.Catalog.language(req.getLanguage()));
+        if (req.getLanguages() != null) {
+            java.util.List<String> langs = com.commengine.util.Catalog.languages(req.getLanguages());
+            if (langs.isEmpty()) throw com.commengine.common.ApiException.badRequest("Choose at least one language");
+            user.applyLanguages(langs);
+        } else if (req.getLanguage() != null) {
+            user.applyLanguages(com.commengine.util.Catalog.languages(java.util.List.of(req.getLanguage())));
+        }
         userRepository.save(user);
         return Map.of("user", DtoMapper.userFull(user));
     }
