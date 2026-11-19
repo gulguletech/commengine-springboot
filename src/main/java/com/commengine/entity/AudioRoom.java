@@ -44,7 +44,7 @@ public class AudioRoom {
 
     /** How many seats the room has: 4, 8, 12, 16 or 20. The host picks it when creating the room and can change it later. */
     @Column(name = "seat_count", nullable = false, columnDefinition = "integer default 12")
-    private int seatCount = 12;
+    private int seatCount = 8;
 
     /** Every language the host speaks when the room was created ("Hindi,Telugu"). Home's language filter matches on any of them. */
     @Column(name = "languages", length = 300)

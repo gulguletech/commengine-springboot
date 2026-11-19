@@ -19,18 +19,18 @@ public class UserDetailsService {
     private final UserRepository users;
     private final LevelService levels;
     private final UserLevelRepository userLevels;
-    private final FriendRequestRepository friends;
+    private final UserFollowRepository follows;
     private final GiftLogRepository giftLogs;
     private final AudioRoomRepository audioRooms;
     private final VideoRoomRepository videoRooms;
 
     public UserDetailsService(UserRepository users, LevelService levels, UserLevelRepository userLevels,
-                              FriendRequestRepository friends, GiftLogRepository giftLogs,
+                              UserFollowRepository follows, GiftLogRepository giftLogs,
                               AudioRoomRepository audioRooms, VideoRoomRepository videoRooms) {
         this.users = users;
         this.levels = levels;
         this.userLevels = userLevels;
-        this.friends = friends;
+        this.follows = follows;
         this.giftLogs = giftLogs;
         this.audioRooms = audioRooms;
         this.videoRooms = videoRooms;
@@ -49,7 +49,8 @@ public class UserDetailsService {
         m.put("level", levels.levelOf(id));
         m.put("receivedCoins", userLevels.findById(id).map(UserLevel::getReceivedCoins).orElse(0L));
         m.put("sentCoins", giftLogs.sentSince(id, Instant.EPOCH));
-        m.put("friends", friends.findAcceptedForUser(id).size());
+        m.put("followers", follows.countByFollowingId(id));
+        m.put("following", follows.countByFollowerId(id));
         m.put("live", liveNow(id));
         return m;
     }

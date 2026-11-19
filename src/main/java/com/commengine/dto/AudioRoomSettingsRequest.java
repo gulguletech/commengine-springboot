@@ -16,7 +16,7 @@ public class AudioRoomSettingsRequest {
     /** Optional: change the room's type (FUN, MUSIC, ...). Null = leave as is. */
     private String category;
 
-    /** Optional: change how many seats the room has (4, 8, 12, 16 or 20). Null = leave as is. */
+    /** Optional: change how many seats the room has (4, 8, 10, 12, 15 or 20; only 4 and 8 are free, the rest need VIP). Null = leave as is. */
     private Integer seatCount;
 
     public Integer getSeatCount() { return seatCount; }

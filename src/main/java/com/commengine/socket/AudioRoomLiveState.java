@@ -14,9 +14,19 @@ import java.util.concurrent.CopyOnWriteArraySet;
 @Component
 public class AudioRoomLiveState {
 
-    /** Seat counts a room may have. Every one is a multiple of 4 because the app shows 4 seats per row. */
-    public static final int[] ALLOWED_SEAT_COUNTS = {4, 8, 12, 16, 20};
-    public static final int DEFAULT_SEAT_COUNT = 12;
+    /**
+     * Mic layouts a room may have, as the app draws them:
+     * 4 (1x4), 8 (2x4), 10 (2x5), 12 (2 big seats + 5 + 5), 15 (3x5), 20 (4x5).
+     * 4 and 8 are free; every other layout is for VIP members only (see {@link #FREE_SEAT_COUNTS}).
+     */
+    public static final int[] ALLOWED_SEAT_COUNTS = {4, 8, 10, 12, 15, 20};
+    public static final int[] FREE_SEAT_COUNTS = {4, 8};
+    public static final int DEFAULT_SEAT_COUNT = 8;
+
+    public static boolean isFreeSeatCount(int n) {
+        for (int a : FREE_SEAT_COUNTS) if (a == n) return true;
+        return false;
+    }
 
     public static boolean isAllowedSeatCount(int n) {
         for (int a : ALLOWED_SEAT_COUNTS) if (a == n) return true;
