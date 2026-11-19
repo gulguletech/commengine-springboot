@@ -14,13 +14,27 @@ public interface AudioRoomRepository extends JpaRepository<AudioRoom, String> {
     // Both PUBLIC and PRIVATE rooms are listed for everyone — PRIVATE rooms are still
     // publicly discoverable, they just require the correct passcode at join time
     // (enforced in AudioRoomService#joinRoom).
-    @Query("select r from AudioRoom r where r.status = :status order by r.createdAt desc")
+    // Offline rooms (host gone, nobody inside) are not visible to anyone but their host.
+    @Query("select r from AudioRoom r where r.status = :status and r.online = true order by r.createdAt desc")
     List<AudioRoom> findVisibleRooms(@Param("status") RoomStatus status);
 
     long countByStatus(RoomStatus status);
 
-    /** The newest room this user is hosting right now, if any. */
+    long countByStatusAndOnlineTrue(RoomStatus status);
+
+    /** The newest room this user owns (online or offline), if any. */
     java.util.Optional<AudioRoom> findFirstByHostIdAndStatusOrderByCreatedAtDesc(String hostId, RoomStatus status);
+
+    /** The newest room this user is hosting right now AND that is online, if any. */
+    java.util.Optional<AudioRoom> findFirstByHostIdAndStatusAndOnlineTrueOrderByCreatedAtDesc(String hostId, RoomStatus status);
+
+    /** Ids of every room that is currently online (used to switch empty ones offline). */
+    @Query("select r.id from AudioRoom r where r.status = :status and r.online = true")
+    List<String> findOnlineRoomIds(@Param("status") RoomStatus status);
+
+    @Modifying
+    @Query("update AudioRoom r set r.online = :online where r.id = :id and r.online <> :online")
+    int setOnline(@Param("id") String id, @Param("online") boolean online);
 
     // ---- store backgrounds: keep the denormalised copy on rooms in step with the shelf ----
 

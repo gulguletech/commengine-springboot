@@ -73,6 +73,13 @@ public class AudioRoom {
 
     private Instant endedAt;
 
+    /**
+     * A host keeps ONE persistent room. It is online while somebody is inside it and offline (hidden from every list,
+     * nobody can join) once the last person leaves. The host coming back flips it online again.
+     */
+    @Column(name = "online", nullable = false, columnDefinition = "boolean default true")
+    private boolean online = true;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "host_id", nullable = false)
     private User host;

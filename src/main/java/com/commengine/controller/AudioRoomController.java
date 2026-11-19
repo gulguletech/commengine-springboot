@@ -34,6 +34,12 @@ public class AudioRoomController {
         return ApiResponse.ok(audioRoomService.listRooms());
     }
 
+    /** The caller's own persistent room (online or offline); {"room": null} if they never created one. */
+    @GetMapping("/mine")
+    public Object myRoom(@CurrentUser User user) {
+        return ApiResponse.ok(audioRoomService.getMyRoom(user));
+    }
+
     @GetMapping("/{id}")
     public Object getRoom(@PathVariable String id) {
         return ApiResponse.ok(audioRoomService.getRoom(id));
@@ -63,6 +69,13 @@ public class AudioRoomController {
     public Object updateSettings(@CurrentUser User user, @PathVariable String id,
                                  @Valid @RequestBody AudioRoomSettingsRequest body) {
         return ApiResponse.ok(audioRoomService.updateSettings(user, id, body), "Room settings updated");
+    }
+
+    /** Kick everybody out and take the room offline, keeping it for next time. */
+    @PostMapping("/{id}/close")
+    public Object closeRoom(@CurrentUser User user, @PathVariable String id) {
+        audioRoomService.closeRoom(user, id);
+        return ApiResponse.ok(Map.of(), "Room is now offline");
     }
 
     @DeleteMapping("/{id}")

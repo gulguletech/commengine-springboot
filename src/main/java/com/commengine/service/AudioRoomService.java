@@ -55,7 +55,16 @@ public class AudioRoomService {
 
     @Transactional
     public Map<String, Object> createRoom(User host, CreateAudioRoomRequest req) {
+        // A host owns ONE persistent room: after the first time they just open it again (it goes online when they join).
+        AudioRoom existing = roomRepository.findFirstByHostIdAndStatusOrderByCreatedAtDesc(host.getId(), RoomStatus.ACTIVE).orElse(null);
+        if (existing != null) {
+            Map<String, Object> errors = new LinkedHashMap<>();
+            errors.put("code", "ROOM_EXISTS");
+            errors.put("roomId", existing.getId());
+            throw new ApiException("You already have a room. Open it from My Rooms.", HttpStatus.CONFLICT, errors);
+        }
         AudioRoom room = new AudioRoom();
+        room.setOnline(true);
         room.setTitle(req.getTitle());
         room.setType(req.getType());
         room.setCoverUrl(req.getCoverUrl());
@@ -115,6 +124,15 @@ public class AudioRoomService {
         return Map.of("rooms", shaped);
     }
 
+    /** The caller's own persistent room (online or offline), or {"room": null} when they have never created one. */
+    public Map<String, Object> getMyRoom(User host) {
+        AudioRoom room = roomRepository.findFirstByHostIdAndStatusOrderByCreatedAtDesc(host.getId(), RoomStatus.ACTIVE).orElse(null);
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("room", room == null ? null
+                : DtoMapper.audioRoomWithHostAndCount(room, memberRepository.findByRoomIdAndLeftAtIsNull(room.getId()).size()));
+        return data;
+    }
+
     public Map<String, Object> getRoom(String id) {
         AudioRoom room = findRoomOrThrow(id);
         List<AudioRoomMember> members = memberRepository.findByRoomIdAndLeftAtIsNullOrderByJoinedAtAsc(id);
@@ -154,7 +172,17 @@ public class AudioRoomService {
         }
 
         if (room.getHost().getId().equals(user.getId())) {
+            // the host coming back brings an offline room back online
+            if (!room.isOnline()) {
+                room.setOnline(true);
+                roomRepository.save(room);
+            }
             return joinedResponse(room, user);
+        }
+
+        // an offline room (host gone, nobody inside) can't be joined by anyone else
+        if (!room.isOnline()) {
+            throw ApiException.notFound("This room is offline right now");
         }
 
         if (room.getType() == RoomType.PUBLIC) {
@@ -337,6 +365,25 @@ public class AudioRoomService {
         // Drop the in-memory seat/presence state too, or it would otherwise sit around
         // in the JVM's memory for the lifetime of the process for a room that no longer exists.
         liveState.removeRoom(id);
+    }
+
+    /**
+     * "End room for everyone", but the room is kept: everybody inside is removed and the room goes offline
+     * until its host opens it again. (endRoom above deletes it for good.)
+     */
+    @Transactional
+    public void closeRoom(User host, String id) {
+        AudioRoom room = findRoomOrThrow(id);
+        if (!room.getHost().getId().equals(host.getId())) {
+            throw ApiException.forbidden("Only the host can close the room");
+        }
+        socketIOServer.getRoomOperations("audio-room:" + id).sendEvent("audio:room-ended", Map.of("roomId", id));
+        java.util.Set<String> inside = liveState.peekMembers(id);
+        if (inside != null) {
+            for (String uid : new java.util.ArrayList<>(inside)) presence.leaveAudioRoom(uid, id);
+        }
+        presence.leaveAudioRoom(host.getId(), id);
+        presence.setAudioOnline(id, false);
     }
 
     /** Admin panel: end any room regardless of who hosts it (same clean-up as the host ending it). */

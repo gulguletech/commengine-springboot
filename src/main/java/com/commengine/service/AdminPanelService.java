@@ -73,7 +73,7 @@ public class AdminPanelService {
         m.put("onlineUsers", users.countOnline());
         m.put("bannedUsers", users.countByBannedTrue());
         m.put("newUsers24h", users.countByCreatedAtBetween(since24h, now));
-        m.put("activeAudioRooms", audioRooms.countByStatus(RoomStatus.ACTIVE));
+        m.put("activeAudioRooms", audioRooms.countByStatusAndOnlineTrue(RoomStatus.ACTIVE));
         m.put("activeLiveRooms", videoRooms.countByStatus(RoomStatus.ACTIVE));
         m.put("coinsInCirculation", wallets.sumCoins());
         m.put("beansInCirculation", wallets.sumBeans());

@@ -87,6 +87,7 @@ public class AudioRoomSocketHandler {
                 if (room == null) return;
 
                 state.ensureSeatCount(payload.getRoomId(), room.getSeatCount()); // seats live in memory: size them from the room
+                if (!room.isOnline()) presence.setAudioOnline(room.getId(), true); // someone is inside: the room is live
                 client.joinRoom("audio-room:" + payload.getRoomId());
                 if (room.getHost().getId().equals(user.getId())) {
                     client.joinRoom("audio-room:" + payload.getRoomId() + ":host");

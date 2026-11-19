@@ -5,6 +5,7 @@ import com.commengine.entity.RoomStatus;
 import com.commengine.entity.VideoRoom;
 import com.commengine.entity.VideoRoomViewer;
 import com.commengine.repository.AudioRoomMemberRepository;
+import com.commengine.repository.AudioRoomRepository;
 import com.commengine.repository.VideoRoomCommentRepository;
 import com.commengine.repository.VideoRoomRepository;
 import com.commengine.repository.VideoRoomViewerRepository;
@@ -37,6 +38,7 @@ public class RoomPresenceService {
 
     private final AudioRoomLiveState state;
     private final AudioRoomMemberRepository audioMembers;
+    private final AudioRoomRepository audioRooms;
     private final VideoRoomRepository videoRooms;
     private final VideoRoomViewerRepository viewers;
     private final VideoRoomCommentRepository comments;
@@ -44,12 +46,13 @@ public class RoomPresenceService {
     private final VideoMicState micState;
 
     public RoomPresenceService(AudioRoomLiveState state, AudioRoomMemberRepository audioMembers,
-                               VideoRoomRepository videoRooms, VideoRoomViewerRepository viewers,
+                               AudioRoomRepository audioRooms, VideoRoomRepository videoRooms, VideoRoomViewerRepository viewers,
                                VideoRoomCommentRepository comments, SocketIOServer server,
                                VideoMicState micState) {
         this.micState = micState;
         this.state = state;
         this.audioMembers = audioMembers;
+        this.audioRooms = audioRooms;
         this.videoRooms = videoRooms;
         this.viewers = viewers;
         this.comments = comments;
@@ -99,6 +102,15 @@ public class RoomPresenceService {
             seatsMsg.put("blockedSeats", state.getBlocked(roomId));
             server.getRoomOperations(channel).sendEvent("audio:seats-update", seatsMsg);
         }
+
+        // Nobody left inside: the room goes offline (hidden from everyone) until its host comes back.
+        if (members == null || members.isEmpty()) setAudioOnline(roomId, false);
+    }
+
+    /** Flips a host's persistent audio room online / offline. A room that no longer exists is simply ignored. */
+    @Transactional
+    public void setAudioOnline(String roomId, boolean online) {
+        audioRooms.setOnline(roomId, online);
     }
 
     // ---------------------------------------------------------------- video

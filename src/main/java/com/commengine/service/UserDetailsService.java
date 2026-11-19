@@ -62,7 +62,7 @@ public class UserDetailsService {
             VideoRoom r = video.get(0);
             return Map.of("kind", "video", "id", r.getId(), "title", r.getTitle());
         }
-        AudioRoom a = audioRooms.findFirstByHostIdAndStatusOrderByCreatedAtDesc(hostId, RoomStatus.ACTIVE).orElse(null);
+        AudioRoom a = audioRooms.findFirstByHostIdAndStatusAndOnlineTrueOrderByCreatedAtDesc(hostId, RoomStatus.ACTIVE).orElse(null);
         if (a != null && a.getType() == RoomType.PUBLIC) { // private rooms need a passcode, so they are not advertised
             return Map.of("kind", "audio", "id", a.getId(), "title", a.getTitle());
         }
