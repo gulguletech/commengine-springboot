@@ -2,6 +2,7 @@ package com.commengine.service;
 
 import com.commengine.common.ApiException;
 import com.commengine.entity.*;
+import com.commengine.repository.GiftLogRepository;
 import com.commengine.repository.LevelConfigRepository;
 import com.commengine.repository.LevelRewardClaimRepository;
 import com.commengine.repository.UserLevelRepository;
@@ -14,7 +15,8 @@ import java.util.*;
 
 /**
  * Levels 1..10 (everyone starts at level 0).
- * A user's level goes up as the total value of gifts they RECEIVE grows. The admin sets, per level, how much gift value
+ * A user's level goes up as their CONTRIBUTION grows: the total value of gifts they SEND (gifts to themselves don't count).
+ * Charisma (gifts received) no longer affects the level. The admin sets, per level, how much gift value
  * is needed and what reward (coins or days of a store item) the user can collect when they get there.
  * Rewards are collected by the user from the Level screen, once per level.
  */
@@ -33,16 +35,18 @@ public class LevelService {
 
     private final LevelConfigRepository configs;
     private final UserLevelRepository userLevels;
+    private final GiftLogRepository giftLogs;
     private final LevelRewardClaimRepository claims;
     private final UserRepository users;
     private final WalletService wallets;
     private final StoreService store;
 
     public LevelService(LevelConfigRepository configs, UserLevelRepository userLevels, LevelRewardClaimRepository claims,
-                        UserRepository users, WalletService wallets, StoreService store) {
+                        GiftLogRepository giftLogs, UserRepository users, WalletService wallets, StoreService store) {
         this.configs = configs;
         this.userLevels = userLevels;
         this.claims = claims;
+        this.giftLogs = giftLogs;
         this.users = users;
         this.wallets = wallets;
         this.store = store;
@@ -57,6 +61,11 @@ public class LevelService {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /** Contribution = total coin value of gifts this user has sent (all time; self-gifts are never logged). */
+    private long contributionOf(String userId) {
+        return giftLogs.sentSince(userId, Instant.EPOCH);
+    }
 
     /** Always MAX_LEVEL entries, level 1..10, so nothing downstream fills gaps. */
     private List<LevelConfig> configList() {
@@ -103,7 +112,7 @@ public class LevelService {
     /** A user's level right now (0 until they reach level 1). For showing on profiles. */
     @Transactional(readOnly = true)
     public int levelOf(String userId) {
-        long received = userLevels.findById(userId).map(UserLevel::getReceivedCoins).orElse(0L);
+        long received = contributionOf(userId);
         return levelFor(configList(), received);
     }
 
@@ -116,7 +125,7 @@ public class LevelService {
 
     private Map<String, Object> buildStatus(String userId) {
         List<LevelConfig> list = configList();
-        long received = userLevels.findById(userId).map(UserLevel::getReceivedCoins).orElse(0L);
+        long received = contributionOf(userId);
         int level = levelFor(list, received);
         Set<Integer> claimed = new HashSet<>();
         for (LevelRewardClaim c : claims.findByUserId(userId)) claimed.add(c.getLevel());
@@ -140,7 +149,7 @@ public class LevelService {
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("level", level);
         res.put("maxLevel", MAX_LEVEL);
-        res.put("receivedCoins", received);
+        res.put("contributionCoins", received);
         res.put("currentRequired", level == 0 ? 0 : list.get(level - 1).getRequiredCoins());
         res.put("nextLevel", level >= MAX_LEVEL ? null : level + 1);
         res.put("nextRequired", level >= MAX_LEVEL ? null : list.get(level).getRequiredCoins());
@@ -154,7 +163,7 @@ public class LevelService {
         users.lockById(user.getId()).orElseThrow(() -> ApiException.notFound("User not found"));
 
         List<LevelConfig> list = configList();
-        long received = userLevels.findById(user.getId()).map(UserLevel::getReceivedCoins).orElse(0L);
+        long received = contributionOf(user.getId());
         if (level > levelFor(list, received)) throw ApiException.forbidden("You have not reached level " + level + " yet");
         if (claims.existsByUserIdAndLevel(user.getId(), level)) {
             throw ApiException.conflict("You already collected the level " + level + " reward");
@@ -218,7 +227,7 @@ public class LevelService {
         if (level < 1 || level > MAX_LEVEL) throw ApiException.badRequest("Level must be 1 to " + MAX_LEVEL);
 
         if (requiredCoins == null || requiredCoins < 1 || requiredCoins > MAX_REQUIRED) {
-            throw ApiException.unprocessable("Gift amount must be between 1 and " + MAX_REQUIRED + " coins");
+            throw ApiException.unprocessable("Contribution amount must be between 1 and " + MAX_REQUIRED + " coins");
         }
         // Thresholds must climb: each level needs more than the one before and less than the one after.
         List<LevelConfig> list = configList();

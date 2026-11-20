@@ -243,8 +243,18 @@ public class GiftService {
     public Map<String, Object> send(User sender, SendGiftRequest req) {
         Gift gift = giftRepository.findById(req.getGiftId()).filter(Gift::isActive)
                 .orElseThrow(() -> ApiException.badRequest("This gift is no longer available"));
-        User receiver = userRepository.findById(req.getReceiverId())
-                .orElseThrow(() -> ApiException.notFound("Receiver not found"));
+
+        // one receiver (old clients) or several (multi-select / gift all); duplicates dropped, order kept
+        java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>();
+        if (req.getReceiverIds() != null) req.getReceiverIds().stream().filter(i -> i != null && !i.isBlank()).forEach(ids::add);
+        if (ids.isEmpty() && req.getReceiverId() != null && !req.getReceiverId().isBlank()) ids.add(req.getReceiverId());
+        if (ids.isEmpty()) throw ApiException.badRequest("Choose who to send the gift to");
+        if (ids.size() > 100) throw ApiException.badRequest("You can gift at most 100 people at once");
+
+        List<User> receivers = new java.util.ArrayList<>();
+        for (String rid : ids) {
+            receivers.add(userRepository.findById(rid).orElseThrow(() -> ApiException.notFound("Receiver not found")));
+        }
 
         String channel;
         boolean audio = "audio".equals(req.getRoomKind());
@@ -255,9 +265,11 @@ public class GiftService {
                 throw ApiException.forbidden("Join the room to send gifts");
             }
             // Anyone in the room can gift anyone in the room (seated or not, themselves included).
-            boolean receiverIsHost = room.getHost().getId().equals(receiver.getId());
-            boolean receiverInRoom = audioState.getMembers(room.getId()).contains(receiver.getId());
-            if (!receiverIsHost && !receiverInRoom) throw ApiException.badRequest("That person is no longer in the room");
+            for (User receiver : receivers) {
+                boolean receiverIsHost = room.getHost().getId().equals(receiver.getId());
+                boolean receiverInRoom = audioState.getMembers(room.getId()).contains(receiver.getId());
+                if (!receiverIsHost && !receiverInRoom) throw ApiException.badRequest(receiver.getName() + " is no longer in the room");
+            }
             channel = "audio-room:" + room.getId();
         } else if ("video".equals(req.getRoomKind())) {
             VideoRoom room = videoRoomRepository.findById(req.getRoomId()).orElse(null);
@@ -268,8 +280,10 @@ public class GiftService {
             if (!hostId.equals(sender.getId()) && !isWatching(room.getId(), sender.getId())) {
                 throw ApiException.forbidden("Join the live to send gifts");
             }
-            if (!hostId.equals(receiver.getId()) && !isWatching(room.getId(), receiver.getId())) {
-                throw ApiException.badRequest("That person is no longer in the live");
+            for (User receiver : receivers) {
+                if (!hostId.equals(receiver.getId()) && !isWatching(room.getId(), receiver.getId())) {
+                    throw ApiException.badRequest(receiver.getName() + " is no longer in the live");
+                }
             }
             channel = "video-room:" + room.getId();
         } else {
@@ -277,30 +291,33 @@ public class GiftService {
         }
 
         int count = req.getCount();
-        long total = gift.getPrice() * count;
+        long total = gift.getPrice() * count; // price for EACH receiver
         long beans = Math.max(1, total * BEAN_PERCENT / 100);
-        String ref = UUID.randomUUID().toString();
-
-        walletService.adjust(sender.getId(), WalletService.COINS, -total, "GIFT_SENT", ref,
-                "Sent " + count + "x " + gift.getName() + " to " + receiver.getName());
-        walletService.adjust(receiver.getId(), WalletService.BEANS, beans, "GIFT_RECEIVED", ref,
-                "Got " + count + "x " + gift.getName() + " from " + sender.getName());
-
-        // Gifts received raise the receiver's level. Sending a gift to yourself doesn't count (no farming levels).
-        if (!sender.getId().equals(receiver.getId())) levelService.addReceived(receiver.getId(), total);
-        rankingService.record(sender.getId(), receiver.getId(), total); // feeds Star list / Contribution list
-
         Map<String, Object> giftJson = toJson(gift);
 
-        Map<String, Object> event = new LinkedHashMap<>();
-        event.put("id", ref);
-        event.put("roomKind", req.getRoomKind());
-        event.put("roomId", req.getRoomId());
-        event.put("gift", giftJson);
-        event.put("count", count);
-        event.put("sender", DtoMapper.userBrief(sender));
-        event.put("receiver", DtoMapper.userBrief(receiver));
-        server.getRoomOperations(channel).sendEvent("gift:received", event);
+        // Everything below is one transaction: if the sender runs out of coins part-way, nobody gets a gift and nothing is charged.
+        for (User receiver : receivers) {
+            String ref = UUID.randomUUID().toString();
+
+            walletService.adjust(sender.getId(), WalletService.COINS, -total, "GIFT_SENT", ref,
+                    "Sent " + count + "x " + gift.getName() + " to " + receiver.getName());
+            walletService.adjust(receiver.getId(), WalletService.BEANS, beans, "GIFT_RECEIVED", ref,
+                    "Got " + count + "x " + gift.getName() + " from " + sender.getName());
+
+            // Sending a gift to yourself doesn't count towards charisma / contribution / level (no farming).
+            if (!sender.getId().equals(receiver.getId())) levelService.addReceived(receiver.getId(), total);
+            rankingService.record(sender.getId(), receiver.getId(), total); // feeds Star list / Contribution list + sender level
+
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("id", ref);
+            event.put("roomKind", req.getRoomKind());
+            event.put("roomId", req.getRoomId());
+            event.put("gift", giftJson);
+            event.put("count", count);
+            event.put("sender", DtoMapper.userBrief(sender));
+            event.put("receiver", DtoMapper.userBrief(receiver));
+            server.getRoomOperations(channel).sendEvent("gift:received", event);
+        }
 
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("wallet", walletService.getBalance(sender.getId()));

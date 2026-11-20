@@ -8,8 +8,11 @@ public class SendGiftRequest {
     private String roomKind;
     @NotBlank
     private String roomId;
-    @NotBlank
+    /** One receiver (old clients). New clients send receiverIds instead. */
     private String receiverId;
+    /** Several receivers at once (multi-select / gift all). Each one gets the full gift. */
+    @Size(max = 100)
+    private java.util.List<String> receiverIds;
     @NotBlank
     private String giftId;
     @Min(1) @Max(99)
@@ -21,6 +24,8 @@ public class SendGiftRequest {
     public void setRoomId(String roomId) { this.roomId = roomId; }
     public String getReceiverId() { return receiverId; }
     public void setReceiverId(String receiverId) { this.receiverId = receiverId; }
+    public java.util.List<String> getReceiverIds() { return receiverIds; }
+    public void setReceiverIds(java.util.List<String> receiverIds) { this.receiverIds = receiverIds; }
     public String getGiftId() { return giftId; }
     public void setGiftId(String giftId) { this.giftId = giftId; }
     public Integer getCount() { return count == null ? 1 : count; }
