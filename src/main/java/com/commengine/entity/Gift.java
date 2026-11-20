@@ -42,6 +42,10 @@ public class Gift {
     @Column(name = "video_public_id", length = 300)
     private String videoPublicId;
 
+    /** How the clip plays in the room: MINI (small, centred; the default) or FULLSCREEN (about 95% of the screen). */
+    @Column(name = "video_display", length = 12, columnDefinition = "varchar(12) default 'MINI'")
+    private String videoDisplay = "MINI";
+
     /** Fallback for seeded gifts that have no uploaded image. */
     @Column(length = 16)
     private String emoji;

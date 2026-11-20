@@ -27,17 +27,18 @@ public class AdminGiftController {
         return ApiResponse.ok(Map.of("items", giftService.adminList()));
     }
 
-    /** multipart: name, price, image (required), video (optional, MP4, max 5s), sortOrder (optional) */
+    /** multipart: name, price, image (required), video (optional, MP4), videoDisplay (optional: MINI | FULLSCREEN), sortOrder (optional) */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Object create(@RequestParam("name") String name,
                          @RequestParam("price") long price,
                          @RequestParam(value = "sortOrder", required = false) Integer sortOrder,
                          @RequestParam("image") MultipartFile image,
-                         @RequestParam(value = "video", required = false) MultipartFile video) {
-        return ApiResponse.ok(giftService.adminCreate(name, price, sortOrder, image, video), "Gift added");
+                         @RequestParam(value = "video", required = false) MultipartFile video,
+                         @RequestParam(value = "videoDisplay", required = false) String videoDisplay) {
+        return ApiResponse.ok(giftService.adminCreate(name, price, sortOrder, image, video, videoDisplay), "Gift added");
     }
 
-    /** multipart, every part optional: name, price, sortOrder, active, image, video, removeVideo=true */
+    /** multipart, every part optional: name, price, sortOrder, active, image, video, removeVideo=true, videoDisplay (MINI | FULLSCREEN) */
     @PostMapping(value = "/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Object update(@PathVariable String id,
                          @RequestParam(value = "name", required = false) String name,
@@ -46,8 +47,9 @@ public class AdminGiftController {
                          @RequestParam(value = "active", required = false) Boolean active,
                          @RequestParam(value = "image", required = false) MultipartFile image,
                          @RequestParam(value = "video", required = false) MultipartFile video,
-                         @RequestParam(value = "removeVideo", defaultValue = "false") boolean removeVideo) {
-        return ApiResponse.ok(giftService.adminUpdate(id, name, price, sortOrder, active, image, video, removeVideo), "Gift updated");
+                         @RequestParam(value = "removeVideo", defaultValue = "false") boolean removeVideo,
+                         @RequestParam(value = "videoDisplay", required = false) String videoDisplay) {
+        return ApiResponse.ok(giftService.adminUpdate(id, name, price, sortOrder, active, image, video, removeVideo, videoDisplay), "Gift updated");
     }
 
     @DeleteMapping("/{id}")

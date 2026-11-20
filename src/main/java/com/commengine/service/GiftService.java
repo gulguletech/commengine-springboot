@@ -84,6 +84,7 @@ public class GiftService {
         m.put("emoji", cleanText(g.getEmoji()));
         m.put("imageUrl", imageDelivery(cleanUrl(g.getImageUrl())));
         m.put("videoUrl", cleanUrl(g.getVideoUrl()));
+        m.put("videoDisplay", "FULLSCREEN".equals(g.getVideoDisplay()) ? "FULLSCREEN" : "MINI"); // null (old rows) = MINI
         m.put("price", g.getPrice());
         return m;
     }
@@ -126,7 +127,7 @@ public class GiftService {
     }
 
     @Transactional
-    public Map<String, Object> adminCreate(String name, long price, Integer sortOrder, MultipartFile image, MultipartFile video) {
+    public Map<String, Object> adminCreate(String name, long price, Integer sortOrder, MultipartFile image, MultipartFile video, String videoDisplay) {
         String cleanName = cleanName(name);
         checkPrice(price);
         if (image == null || image.isEmpty()) throw ApiException.unprocessable("Gift image is required");
@@ -135,6 +136,7 @@ public class GiftService {
         g.setName(cleanName);
         g.setPrice(price);
         g.setSortOrder(sortOrder == null ? 0 : sortOrder);
+        if (videoDisplay != null && !videoDisplay.isBlank()) g.setVideoDisplay(cleanVideoDisplay(videoDisplay));
         attachImage(g, image);
         try {
             if (video != null && !video.isEmpty()) attachVideo(g, video);
@@ -148,12 +150,13 @@ public class GiftService {
 
     @Transactional
     public Map<String, Object> adminUpdate(String id, String name, Long price, Integer sortOrder, Boolean active,
-                                           MultipartFile image, MultipartFile video, boolean removeVideo) {
+                                           MultipartFile image, MultipartFile video, boolean removeVideo, String videoDisplay) {
         Gift g = giftRepository.findById(id).orElseThrow(() -> ApiException.notFound("Gift not found"));
         if (name != null) g.setName(cleanName(name));
         if (price != null) { checkPrice(price); g.setPrice(price); }
         if (sortOrder != null) g.setSortOrder(sortOrder);
         if (active != null) g.setActive(active);
+        if (videoDisplay != null && !videoDisplay.isBlank()) g.setVideoDisplay(cleanVideoDisplay(videoDisplay));
 
         if (image != null && !image.isEmpty()) {
             String oldId = g.getImagePublicId();
@@ -188,6 +191,13 @@ public class GiftService {
         m.put("sortOrder", g.getSortOrder());
         m.put("createdAt", g.getCreatedAt());
         return m;
+    }
+
+    /** "MINI" or "FULLSCREEN" (any case); anything else is rejected. */
+    private static String cleanVideoDisplay(String v) {
+        String t = v.trim().toUpperCase();
+        if (!t.equals("MINI") && !t.equals("FULLSCREEN")) throw ApiException.unprocessable("Video display must be MINI or FULLSCREEN");
+        return t;
     }
 
     private static String cleanName(String name) {
