@@ -10,13 +10,13 @@ import java.util.Map;
 /**
  * Stateless, clock-driven lucky draw. Every client computes the same round from the server clock,
  * so everyone sees the same timer and the same winner without any DB or scheduler.
- * Cycle: 30s BETTING -> 5s DRAW -> 5s RESULT -> next round.
+ * Cycle: 24s BETTING -> 11s DRAW -> 5s RESULT -> next round (40s in total).
  */
 @Service
 public class LuckyDrawService {
 
-    public static final long BETTING_MS = 30_000;
-    public static final long DRAW_MS = 5_000;
+    public static final long BETTING_MS = 24_000; // was 30s: 6s moved to the draw so the spin builds suspense (the cycle stays 40s, so round numbers do not change)
+    public static final long DRAW_MS = 11_000; // the spin: starts fast and slows down until it stops on the winner (was 5s)
     public static final long RESULT_MS = 5_000;
     public static final long CYCLE_MS = BETTING_MS + DRAW_MS + RESULT_MS;
     public static final int OPTIONS = 6;

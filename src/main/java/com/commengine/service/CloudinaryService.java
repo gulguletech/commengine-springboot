@@ -66,6 +66,23 @@ public class CloudinaryService {
         }
     }
 
+    /**
+     * The Cloudinary public id of an image WE uploaded into `folder` (null for anything else: another folder, another
+     * site, a plain link). Used to delete a replaced picture without ever touching an image that belongs to something else.
+     */
+    public String publicIdInFolder(String url, String folder) {
+        if (url == null || !url.contains("res.cloudinary.com")) return null;
+        int i = url.indexOf("/upload/");
+        if (i < 0) return null;
+        String rest = url.substring(i + "/upload/".length());
+        rest = rest.replaceFirst("^v\\d+/", "");                 // version segment
+        int q = rest.indexOf('?');
+        if (q >= 0) rest = rest.substring(0, q);
+        int dot = rest.lastIndexOf('.');
+        if (dot > rest.lastIndexOf('/')) rest = rest.substring(0, dot); // file extension
+        return rest.startsWith(folder + "/") ? rest : null;
+    }
+
     public UploadResult upload(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw ApiException.unprocessable("No file uploaded");

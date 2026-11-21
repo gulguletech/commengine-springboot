@@ -71,6 +71,13 @@ public class AudioRoomController {
         return ApiResponse.ok(audioRoomService.updateSettings(user, id, body), "Room settings updated");
     }
 
+    /** POST /api/rooms/audio/{id}/cover  (multipart, field: cover). Host only; the old picture is deleted. */
+    @PostMapping("/{id}/cover")
+    public Object updateCover(@CurrentUser User user, @PathVariable String id,
+                              @RequestParam("cover") org.springframework.web.multipart.MultipartFile cover) {
+        return ApiResponse.ok(audioRoomService.updateCover(user, id, cover), "Room picture updated");
+    }
+
     /** Kick everybody out and take the room offline, keeping it for next time. */
     @PostMapping("/{id}/close")
     public Object closeRoom(@CurrentUser User user, @PathVariable String id) {

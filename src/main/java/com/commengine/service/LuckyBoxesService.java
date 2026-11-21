@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
- * Lucky Boxes: 8 boxes, shared 40s rounds (30s betting -> 5s draw -> 5s result).
+ * Lucky Boxes: 8 boxes, shared 40s rounds (24s betting -> 11s draw -> 5s result).
  * The round and phase come from the server clock, the winner from a secret HMAC, bets are debited from
  * the wallet immediately and winners are paid by the server (scheduler), never by the client.
  */
@@ -24,8 +24,8 @@ import java.util.*;
 public class LuckyBoxesService {
 
     public static final String GAME = "lucky-boxes";
-    public static final long BETTING_MS = 30_000;
-    public static final long DRAW_MS = 5_000;
+    public static final long BETTING_MS = 24_000; // was 30s: 6s moved to the draw so the spin builds suspense (the cycle stays 40s, so round numbers do not change)
+    public static final long DRAW_MS = 11_000; // the spin: starts fast and slows down until it stops on the winner (was 5s)
     public static final long RESULT_MS = 5_000;
     public static final long CYCLE_MS = BETTING_MS + DRAW_MS + RESULT_MS;
 

@@ -38,12 +38,14 @@ public class AudioRoomService {
     private final AudioRoomLiveState liveState;
     private final RoomPresenceService presence;
     private final StoreService storeService;
+    private final CloudinaryService cloudinary;
 
     public AudioRoomService(AudioRoomRepository roomRepository, AudioRoomMemberRepository memberRepository,
                             AudioJoinRequestRepository joinRequestRepository, AgoraService agoraService,
                             SocketIOServer socketIOServer, AudioRoomLiveState liveState,
-                            RoomPresenceService presence, StoreService storeService) {
+                            RoomPresenceService presence, StoreService storeService, CloudinaryService cloudinary) {
         this.storeService = storeService;
+        this.cloudinary = cloudinary;
         this.roomRepository = roomRepository;
         this.memberRepository = memberRepository;
         this.joinRequestRepository = joinRequestRepository;
@@ -335,6 +337,38 @@ public class AudioRoomService {
         notify.put("hasPasscode", room.getPasscode() != null);
         notify.put("seatCount", room.getSeatCount());
         socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:settings-updated", notify);
+
+        return Map.of("room", DtoMapper.audioRoomBase(room));
+    }
+
+    private static final String COVER_FOLDER = "room-covers";
+    private static final long MAX_COVER_BYTES = 5L * 1024 * 1024;
+
+    /**
+     * The host changes the room's picture. The new image is uploaded and saved first; only then is the previous
+     * one deleted from Cloudinary, so a failed upload never leaves the room without a picture, and replaced pictures
+     * don't pile up and use storage. Only pictures this method uploaded (folder room-covers) are ever deleted.
+     */
+    @Transactional
+    public Map<String, Object> updateCover(User host, String id, org.springframework.web.multipart.MultipartFile file) {
+        AudioRoom room = findRoomOrThrow(id);
+        if (!room.getHost().getId().equals(host.getId())) {
+            throw ApiException.forbidden("Only the host can change the room picture");
+        }
+        if (file == null || file.isEmpty()) throw ApiException.unprocessable("No picture uploaded");
+        if (file.getSize() > MAX_COVER_BYTES) throw ApiException.unprocessable("Picture must be under 5 MB");
+
+        String oldPublicId = cloudinary.publicIdInFolder(room.getCoverUrl(), COVER_FOLDER);
+        CloudinaryService.MediaResult uploaded = cloudinary.uploadMedia(file, COVER_FOLDER, "image");
+        room.setCoverUrl(uploaded.url());
+        roomRepository.save(room);
+        if (oldPublicId != null && !oldPublicId.equals(uploaded.publicId())) cloudinary.delete(oldPublicId, "image");
+
+        // everyone in the room sees the new picture straight away
+        Map<String, Object> updated = new LinkedHashMap<>();
+        updated.put("roomId", room.getId());
+        updated.put("coverUrl", room.getCoverUrl());
+        socketIOServer.getRoomOperations("audio-room:" + room.getId()).sendEvent("audio:room-updated", updated);
 
         return Map.of("room", DtoMapper.audioRoomBase(room));
     }
