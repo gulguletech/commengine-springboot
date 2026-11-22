@@ -44,12 +44,14 @@ public class RoomPresenceService {
     private final VideoRoomCommentRepository comments;
     private final SocketIOServer server;
     private final VideoMicState micState;
+    private final HostSessionService hostSessions;
 
     public RoomPresenceService(AudioRoomLiveState state, AudioRoomMemberRepository audioMembers,
                                AudioRoomRepository audioRooms, VideoRoomRepository videoRooms, VideoRoomViewerRepository viewers,
                                VideoRoomCommentRepository comments, SocketIOServer server,
-                               VideoMicState micState) {
+                               VideoMicState micState, HostSessionService hostSessions) {
         this.micState = micState;
+        this.hostSessions = hostSessions;
         this.state = state;
         this.audioMembers = audioMembers;
         this.audioRooms = audioRooms;
@@ -61,8 +63,14 @@ public class RoomPresenceService {
 
     // ---------------------------------------------------------------- audio
 
+    /** An agency host is now inside their own room / live: start counting working time (no-op for non-agency users). */
+    public void hostStarted(String userId, String kind, String roomId) {
+        hostSessions.open(userId, kind, roomId);
+    }
+
     @Transactional
     public void leaveAudioRoom(String userId, String roomId) {
+        hostSessions.close(userId, roomId);
         int seatIdx = state.clearUserFromRoom(roomId, userId);
         Set<String> members = state.peekMembers(roomId);
         if (members != null) members.remove(userId);
@@ -145,6 +153,7 @@ public class RoomPresenceService {
     @Transactional
     public void endVideoRoom(VideoRoom room) {
         String id = room.getId();
+        hostSessions.closeRoom(id);
         server.getRoomOperations("video-room:" + id).sendEvent("video:room-ended", Map.of("roomId", id));
         micState.clearRoom(id);
         comments.deleteAllByRoomId(id);

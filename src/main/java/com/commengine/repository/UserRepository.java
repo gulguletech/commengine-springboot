@@ -25,6 +25,8 @@ public interface UserRepository extends JpaRepository<User, String> {
 
     boolean existsByPublicId(String publicId);
 
+    Optional<User> findByPublicId(String publicId);
+
     List<User> findByPublicIdIsNull();
 
     /** Name contains the text, or the short user ID starts with it. */

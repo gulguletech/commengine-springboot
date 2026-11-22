@@ -30,4 +30,8 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
 
     @Query("select coalesce(sum(-t.amount), 0) from WalletTransaction t where t.type = :type and t.createdAt >= :after")
     long sumSpentSince(@Param("type") String type, @Param("after") Instant after);
+
+    /** Beans (= diamonds) a user earned from gifts inside [from, to). */
+    @Query("select coalesce(sum(t.amount), 0) from WalletTransaction t where t.userId = :userId and t.currency = 'BEANS' and t.type = 'GIFT_RECEIVED' and t.createdAt >= :from and t.createdAt < :to")
+    long sumGiftBeans(@Param("userId") String userId, @Param("from") Instant from, @Param("to") Instant to);
 }

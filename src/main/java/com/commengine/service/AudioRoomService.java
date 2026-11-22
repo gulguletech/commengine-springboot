@@ -179,6 +179,7 @@ public class AudioRoomService {
                 room.setOnline(true);
                 roomRepository.save(room);
             }
+            presence.hostStarted(user.getId(), "AUDIO", room.getId()); // agency working time
             return joinedResponse(room, user);
         }
 

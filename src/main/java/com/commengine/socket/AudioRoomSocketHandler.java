@@ -91,6 +91,7 @@ public class AudioRoomSocketHandler {
                 client.joinRoom("audio-room:" + payload.getRoomId());
                 if (room.getHost().getId().equals(user.getId())) {
                     client.joinRoom("audio-room:" + payload.getRoomId() + ":host");
+                    presence.hostStarted(user.getId(), "AUDIO", room.getId()); // agency working time
                 }
                 client.set(CURRENT_ROOM_KEY, payload.getRoomId());
                 boolean newlyJoined = state.getMembers(payload.getRoomId()).add(user.getId());

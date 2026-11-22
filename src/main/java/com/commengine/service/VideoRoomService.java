@@ -73,6 +73,7 @@ public class VideoRoomService {
         data.put("rtc", rtc);
         data.put("hostUid", uidNum);
         presence.leaveOthers(host.getId(), "video", room.getId());
+        presence.hostStarted(host.getId(), "VIDEO", room.getId()); // agency working time
         return data;
     }
 
@@ -100,6 +101,7 @@ public class VideoRoomService {
 
         // one room at a time (must run before we register this user as a viewer here)
         presence.leaveOthers(user.getId(), "video", id);
+        if (isHost) presence.hostStarted(user.getId(), "VIDEO", id); // agency working time
 
         if (!isHost) {
             VideoRoomViewer viewer = viewerRepository.findByRoomIdAndUserId(id, user.getId()).orElse(null);
