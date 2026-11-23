@@ -85,4 +85,8 @@ public interface UserRepository extends JpaRepository<User, String> {
     int extendEntry(@Param("userId") String userId, @Param("itemId") String itemId, @Param("at") Instant at);
 
     long countByVipExpiresAtAfter(java.time.Instant now);
+
+    /** Users connected to the app right now (socket online), newest activity first. Optional name / user ID search. */
+    @Query("select u from User u where u.isOnline = true and u.banned = false and (:q = '' or lower(u.name) like lower(concat('%', :q, '%')) or u.publicId = :q) order by u.lastSeen desc")
+    java.util.List<User> findOnlineForInvite(@Param("q") String q, org.springframework.data.domain.Pageable pageable);
 }
