@@ -48,13 +48,15 @@ public class GiftService {
     private final CloudinaryService cloudinaryService;
     private final LevelService levelService;
     private final RankingService rankingService;
+    private final PkService pkService;
 
     public GiftService(WalletService walletService, UserRepository userRepository,
                        AudioRoomRepository audioRoomRepository, VideoRoomRepository videoRoomRepository,
                        AudioRoomLiveState audioState, SocketIOServer server,
                        GiftRepository giftRepository, CloudinaryService cloudinaryService,
                        LevelService levelService, RankingService rankingService,
-                       VideoRoomViewerRepository videoViewerRepository) {
+                       VideoRoomViewerRepository videoViewerRepository, PkService pkService) {
+        this.pkService = pkService;
         this.videoViewerRepository = videoViewerRepository;
         this.walletService = walletService;
         this.userRepository = userRepository;
@@ -307,6 +309,7 @@ public class GiftService {
             // Sending a gift to yourself doesn't count towards charisma / contribution / level (no farming).
             if (!sender.getId().equals(receiver.getId())) levelService.addReceived(receiver.getId(), total);
             rankingService.record(sender.getId(), receiver.getId(), total); // feeds Star list / Contribution list + sender level
+            if (audio) pkService.addScore(req.getRoomId(), sender.getId(), receiver.getId(), total); // PK battle score
 
             Map<String, Object> event = new LinkedHashMap<>();
             event.put("id", ref);
