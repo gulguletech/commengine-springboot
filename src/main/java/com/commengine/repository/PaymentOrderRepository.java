@@ -15,4 +15,10 @@ public interface PaymentOrderRepository extends JpaRepository<PaymentOrder, Stri
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from PaymentOrder o where o.orderId = :id")
     Optional<PaymentOrder> findForUpdate(@Param("id") String id);
+
+    /** [paidAt, coins, amountInr] of PAID orders by these users inside [from, to). */
+    @Query("select o.paidAt, o.coins, o.amountInr from PaymentOrder o where o.status = 'PAID' and o.userId in :ids and o.paidAt >= :from and o.paidAt < :to")
+    java.util.List<Object[]> paidRows(@org.springframework.data.repository.query.Param("ids") java.util.Collection<String> ids,
+                                      @org.springframework.data.repository.query.Param("from") java.time.Instant from,
+                                      @org.springframework.data.repository.query.Param("to") java.time.Instant to);
 }

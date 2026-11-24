@@ -403,6 +403,61 @@ public class StoreService {
 
     // ------------------------------------------------------------------ JSON shapes
 
+    // ---------------------------------------------------------------- official giving (super admin)
+
+    /** Items an official can hand out: active, paid, not VIP-exclusive. Optional name search. */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> officialCatalog(String q) {
+        String needle = q == null ? "" : q.trim().toLowerCase();
+        return itemRepository.findAll().stream()
+                .filter(i -> i.isActive() && !i.isFree() && !i.isVipOnly())
+                .filter(i -> needle.isEmpty() || i.getName().toLowerCase().contains(needle))
+                .sorted(Comparator.comparing(StoreItem::getCategory).thenComparingInt(StoreItem::getSortOrder).thenComparing(StoreItem::getName))
+                .map(StoreService::publicJson)
+                .toList();
+    }
+
+    /** Gives `days` of a paid item for free. Returns the item (for the grant log) and when it ends. */
+    @Transactional
+    public Map<String, Object> giveOfficial(User giver, User receiver, String itemId, int days) {
+        if (days < 1 || days > MAX_HOLD_DAYS) throw ApiException.badRequest("Days must be between 1 and " + MAX_HOLD_DAYS);
+        StoreItem item = itemRepository.findById(itemId).orElseThrow(() -> ApiException.notFound("Item not found"));
+        if (!item.isActive() || item.isFree() || item.isVipOnly()) throw ApiException.badRequest("This item can't be given");
+        Map<String, Object> shown = grantReward(receiver.getId(), item.getId(), days);
+        if (shown == null) throw ApiException.badRequest("This item can't be given");
+
+        Map<String, Object> note = new LinkedHashMap<>();
+        note.put("item", shown);
+        note.put("days", days);
+        note.put("from", DtoMapper.userBrief(giver));
+        server.getRoomOperations("user:" + receiver.getId()).sendEvent("store:item-received", note);
+
+        Instant ends = userItemRepository.findByUserIdAndItemId(receiver.getId(), item.getId()).map(UserItem::getExpiresAt).orElse(null);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("itemId", item.getId());
+        out.put("name", item.getName());
+        out.put("category", item.getCategory().name());
+        out.put("imageUrl", thumbUrl(item));
+        out.put("expiresAt", ends);
+        return out;
+    }
+
+    /** Takes a given item back: the rental row goes, and it is taken off the user if they are wearing it. */
+    @Transactional
+    public void revokeOfficial(String userId, String itemId) {
+        userItemRepository.findByUserIdAndItemId(userId, itemId).ifPresent(userItemRepository::delete);
+        User u = userRepository.findById(userId).orElse(null);
+        if (u == null) return;
+        boolean changed = false;
+        if (itemId.equals(u.getFrameItemId())) { u.setFrameItemId(null); u.setFrameUrl(null); u.setFrameExpiresAt(null); changed = true; }
+        if (itemId.equals(u.getBubbleItemId())) { u.setBubbleItemId(null); u.setBubbleUrl(null); u.setBubbleTextColor(null); u.setBubbleExpiresAt(null); changed = true; }
+        if (itemId.equals(u.getEntryItemId())) { u.setEntryItemId(null); u.setEntryName(null); u.setEntryVideoUrl(null); u.setEntryExpiresAt(null); changed = true; }
+        if (changed) {
+            userRepository.save(u);
+            socketUserResolver.refreshClients(server, u);
+        }
+    }
+
     /** Shared by the shelf, the backpack and the admin list. */
     private static Map<String, Object> publicJson(StoreItem i) {
         Map<String, Object> m = new LinkedHashMap<>();

@@ -19,4 +19,6 @@ public interface HostSessionRepository extends JpaRepository<HostSession, String
     /** Sessions that overlap [from, to): started before `to` and not finished before `from`. */
     @Query("select s from HostSession s where s.userId = :userId and s.startedAt < :to and (s.endedAt is null or s.endedAt > :from)")
     List<HostSession> findOverlapping(@Param("userId") String userId, @Param("from") Instant from, @Param("to") Instant to);
+
+    long countByEndedAtIsNull();
 }

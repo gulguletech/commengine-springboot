@@ -23,10 +23,13 @@ public class UserDetailsService {
     private final GiftLogRepository giftLogs;
     private final AudioRoomRepository audioRooms;
     private final VideoRoomRepository videoRooms;
+    private final BadgeService badgeService;
 
     public UserDetailsService(UserRepository users, LevelService levels, UserLevelRepository userLevels,
                               UserFollowRepository follows, GiftLogRepository giftLogs,
-                              AudioRoomRepository audioRooms, VideoRoomRepository videoRooms) {
+                              AudioRoomRepository audioRooms, VideoRoomRepository videoRooms,
+                              BadgeService badgeService) {
+        this.badgeService = badgeService;
         this.users = users;
         this.levels = levels;
         this.userLevels = userLevels;
@@ -52,6 +55,7 @@ public class UserDetailsService {
         m.put("followers", follows.countByFollowingId(id));
         m.put("following", follows.countByFollowerId(id));
         m.put("live", liveNow(id));
+        m.put("badges", badgeService.activeOf(id));
         return m;
     }
 

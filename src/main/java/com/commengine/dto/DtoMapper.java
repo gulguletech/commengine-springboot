@@ -61,6 +61,7 @@ public final class DtoMapper {
         m.put("bio", u.getBio());
         m.put("avatarUrl", u.getAvatarUrl());
         m.put("isVerified", u.isVerified());
+        m.put("isSuperAdmin", u.isSuperAdmin());
         m.put("isOnline", u.isOnline());
         m.put("lastSeen", u.getLastSeen());
         m.put("createdAt", u.getCreatedAt());

@@ -87,6 +87,10 @@ public class User {
     @Column(nullable = false, columnDefinition = "boolean default false")
     private boolean banned = false;
 
+    /** Official super admin (set from the admin panel). A super admin can never also be in an agency. */
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean superAdmin = false;
+
     private Instant bannedAt;
 
     @Column(length = 200)

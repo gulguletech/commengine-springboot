@@ -311,6 +311,7 @@ public class AgencyService {
         if (pid.isEmpty()) throw ApiException.badRequest("Enter the host's ID");
         User host = users.findByPublicId(pid).orElseThrow(() -> ApiException.notFound("No user with that ID"));
         if (host.isBanned()) throw ApiException.badRequest("This user can't be invited");
+        if (host.isSuperAdmin()) throw ApiException.conflict("Super admins can't join an agency");
         if (members.existsByUserId(host.getId())) {
             throw ApiException.conflict(host.getId().equals(owner.getId())
                     ? "You are already in your agency"
@@ -379,6 +380,7 @@ public class AgencyService {
         }
         Agency a = agencies.findById(inv.getAgencyId()).orElseThrow(() -> ApiException.notFound("Agency not found"));
         if (!a.isActive()) throw ApiException.badRequest("This agency is not active");
+        if (users.findById(user.getId()).map(User::isSuperAdmin).orElse(false)) throw ApiException.conflict("Super admins can't join an agency");
         if (members.existsByUserId(user.getId())) throw ApiException.conflict("You are already in an agency");
         AgencyMember m = new AgencyMember();
         m.setAgencyId(a.getId());
@@ -481,6 +483,7 @@ public class AgencyService {
     public Map<String, Object> adminCreate(AgencyRequests.AdminCreate r) {
         User owner = users.findById(r.getOwnerId()).orElseThrow(() -> ApiException.notFound("Owner user not found"));
         if (members.existsByUserId(owner.getId())) throw ApiException.conflict(owner.getName() + " is already in an agency");
+        if (owner.isSuperAdmin()) throw ApiException.conflict(owner.getName() + " is a super admin. A person can't be a super admin and run an agency.");
         Agency a = new Agency();
         a.setCode(newCode());
         a.setName(r.getName().trim());
@@ -509,6 +512,7 @@ public class AgencyService {
         if (r.getOwnerId() != null && !r.getOwnerId().isBlank() && !r.getOwnerId().equals(a.getOwnerId())) {
             User nu = users.findById(r.getOwnerId()).orElseThrow(() -> ApiException.notFound("New owner not found"));
             requireFreeUser(nu, a.getId());
+            if (nu.isSuperAdmin()) throw ApiException.conflict(nu.getName() + " is a super admin and can't run an agency");
             AgencyMember nm = members.findByUserId(nu.getId()).orElse(null);
             if (nm == null) {
                 nm = new AgencyMember();
@@ -541,6 +545,7 @@ public class AgencyService {
         Agency a = agencies.findById(agencyId).orElseThrow(() -> ApiException.notFound("Agency not found"));
         User u = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
         if (members.existsByUserId(u.getId())) throw ApiException.conflict(u.getName() + " is already in an agency");
+        if (u.isSuperAdmin()) throw ApiException.conflict(u.getName() + " is a super admin and can't join an agency");
         AgencyMember m = new AgencyMember();
         m.setAgencyId(a.getId());
         m.setUserId(u.getId());

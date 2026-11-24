@@ -35,4 +35,16 @@ public interface GiftLogRepository extends JpaRepository<GiftLog, String> {
     @Query(value = "select count(*) from (select sender_id from gift_logs where created_at >= :since "
             + "group by sender_id having sum(coins) > :mine) t", nativeQuery = true)
     long sendersAbove(@Param("since") Instant since, @Param("mine") long mine);
+
+    /** Coins received by any of these users inside [from, to). */
+    @Query("select coalesce(sum(g.coins), 0) from GiftLog g where g.receiverId in :ids and g.createdAt >= :from and g.createdAt < :to")
+    long sumReceivedByIds(@Param("ids") java.util.Collection<String> ids, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** [receiverId, coins] per receiver inside [from, to). */
+    @Query("select g.receiverId, sum(g.coins) from GiftLog g where g.receiverId in :ids and g.createdAt >= :from and g.createdAt < :to group by g.receiverId")
+    List<Object[]> sumByReceiver(@Param("ids") java.util.Collection<String> ids, @Param("from") Instant from, @Param("to") Instant to);
+
+    /** [createdAt, coins] rows, grouped by day in Java. */
+    @Query("select g.createdAt, g.coins from GiftLog g where g.receiverId in :ids and g.createdAt >= :from and g.createdAt < :to")
+    List<Object[]> rowsReceivedByIds(@Param("ids") java.util.Collection<String> ids, @Param("from") Instant from, @Param("to") Instant to);
 }
