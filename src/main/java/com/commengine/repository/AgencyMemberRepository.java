@@ -16,5 +16,7 @@ public interface AgencyMemberRepository extends JpaRepository<AgencyMember, Stri
 
     long countByAgencyId(String agencyId);
 
+    List<AgencyMember> findByAgencyIdIn(java.util.Collection<String> agencyIds);
+
     void deleteByAgencyId(String agencyId);
 }

@@ -2,6 +2,7 @@ package com.commengine.service;
 
 import com.commengine.entity.HostSession;
 import com.commengine.repository.AgencyMemberRepository;
+import com.commengine.repository.DirectHostRepository;
 import com.commengine.repository.HostSessionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,17 +24,19 @@ public class HostSessionService {
 
     private final HostSessionRepository sessions;
     private final AgencyMemberRepository members;
+    private final DirectHostRepository directHosts;
 
-    public HostSessionService(HostSessionRepository sessions, AgencyMemberRepository members) {
+    public HostSessionService(HostSessionRepository sessions, AgencyMemberRepository members, DirectHostRepository directHosts) {
         this.sessions = sessions;
         this.members = members;
+        this.directHosts = directHosts;
     }
 
     /** The host is now inside their own room. Only agency members are tracked. Safe to call repeatedly. */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void open(String userId, String kind, String roomId) {
         try {
-            if (!members.existsByUserId(userId)) return;
+            if (!members.existsByUserId(userId) && !directHosts.existsById(userId)) return; // agency hosts and direct hosts
             Instant now = Instant.now();
             boolean alreadyOpen = false;
             for (HostSession s : sessions.findByUserIdAndEndedAtIsNull(userId)) {

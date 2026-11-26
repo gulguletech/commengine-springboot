@@ -15,6 +15,10 @@ public interface AgencyRepository extends JpaRepository<Agency, String> {
 
     Optional<Agency> findByOwnerId(String ownerId);
 
+    java.util.List<Agency> findBySuperAdminId(String superAdminId);
+
+    java.util.List<Agency> findByBdUserId(String bdUserId);
+
     @Query("select a from Agency a where :q = '' or lower(a.name) like lower(concat('%', :q, '%')) or lower(a.code) like lower(concat('%', :q, '%'))")
     Page<Agency> adminSearch(@Param("q") String q, Pageable pageable);
 }

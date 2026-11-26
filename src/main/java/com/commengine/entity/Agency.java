@@ -33,6 +33,27 @@ public class Agency {
     @Column(name = "owner_id", nullable = false)
     private String ownerId;
 
+    /** From the "Invite Agency" form (optional for agencies made in the admin panel). */
+    @Column(name = "whatsapp", length = 30)
+    private String whatsapp;
+
+    @Column(name = "country", length = 60)
+    private String country;
+
+    @Column(name = "logo_url", length = 600)
+    private String logoUrl;
+
+    @Column(name = "id_proof_url", length = 600)
+    private String idProofUrl;
+
+    /** The BD this agency was registered under (null = directly under a super admin / unassigned). */
+    @Column(name = "bd_user_id")
+    private String bdUserId;
+
+    /** The super admin whose target this agency works towards (null = unassigned). */
+    @Column(name = "super_admin_id")
+    private String superAdminId;
+
     /** A disabled agency keeps its data but the owner loses the dashboard and can't invite. */
     @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean active = true;

@@ -137,6 +137,11 @@ public class AgencyService {
         m.put("active", a.isActive());
         m.put("createdAt", a.getCreatedAt());
         m.put("owner", userSlim(owner));
+        m.put("whatsapp", a.getWhatsapp());
+        m.put("country", a.getCountry());
+        m.put("logoUrl", a.getLogoUrl());
+        m.put("bdUserId", a.getBdUserId());
+        m.put("superAdminId", a.getSuperAdminId());
         return m;
     }
 
@@ -311,7 +316,6 @@ public class AgencyService {
         if (pid.isEmpty()) throw ApiException.badRequest("Enter the host's ID");
         User host = users.findByPublicId(pid).orElseThrow(() -> ApiException.notFound("No user with that ID"));
         if (host.isBanned()) throw ApiException.badRequest("This user can't be invited");
-        if (host.isSuperAdmin()) throw ApiException.conflict("Super admins can't join an agency");
         if (members.existsByUserId(host.getId())) {
             throw ApiException.conflict(host.getId().equals(owner.getId())
                     ? "You are already in your agency"
@@ -380,7 +384,6 @@ public class AgencyService {
         }
         Agency a = agencies.findById(inv.getAgencyId()).orElseThrow(() -> ApiException.notFound("Agency not found"));
         if (!a.isActive()) throw ApiException.badRequest("This agency is not active");
-        if (users.findById(user.getId()).map(User::isSuperAdmin).orElse(false)) throw ApiException.conflict("Super admins can't join an agency");
         if (members.existsByUserId(user.getId())) throw ApiException.conflict("You are already in an agency");
         AgencyMember m = new AgencyMember();
         m.setAgencyId(a.getId());
@@ -460,6 +463,8 @@ public class AgencyService {
             rows.add(row);
         }
         Map<String, Object> out = agencyJson(a, um.get(a.getOwnerId()) != null ? um.get(a.getOwnerId()) : users.findById(a.getOwnerId()).orElse(null));
+        out.put("superAdmin", a.getSuperAdminId() == null ? null : userSlim(users.findById(a.getSuperAdminId()).orElse(null)));
+        out.put("bd", a.getBdUserId() == null ? null : userSlim(users.findById(a.getBdUserId()).orElse(null)));
         out.put("members", rows);
         out.put("pendingInvites", invites.countByAgencyIdAndStatus(a.getId(), AgencyInvite.PENDING));
         Map<String, Object> period = new LinkedHashMap<>();
@@ -479,15 +484,33 @@ public class AgencyService {
         }
     }
 
+    /** Admin panel: the owner is picked from the users. */
     @Transactional
     public Map<String, Object> adminCreate(AgencyRequests.AdminCreate r) {
         User owner = users.findById(r.getOwnerId()).orElseThrow(() -> ApiException.notFound("Owner user not found"));
-        if (members.existsByUserId(owner.getId())) throw ApiException.conflict(owner.getName() + " is already in an agency");
-        if (owner.isSuperAdmin()) throw ApiException.conflict(owner.getName() + " is a super admin. A person can't be a super admin and run an agency.");
+        Agency a = createFor(owner, r.getName(), r.getWelcomeMessage(), null, null, null, null, null, null);
+        return agencyJson(a, owner);
+    }
+
+    /**
+     * Makes an agency with `owner` as its owner (also its first host). A person owns one agency and hosts for one agency;
+     * everything else (super admin, BD) can be held on top. bdUserId / superAdminId = who the agency works under.
+     */
+    @Transactional
+    public Agency createFor(User owner, String name, String welcome, String whatsapp, String country, String logoUrl,
+                            String idProofUrl, String bdUserId, String superAdminId) {
+        if (members.existsByUserId(owner.getId())) throw ApiException.conflict(owner.getName() + " is already hosting in an agency");
+        if (agencies.findByOwnerId(owner.getId()).isPresent()) throw ApiException.conflict(owner.getName() + " already runs an agency");
         Agency a = new Agency();
         a.setCode(newCode());
-        a.setName(r.getName().trim());
-        a.setWelcomeMessage(r.getWelcomeMessage() == null || r.getWelcomeMessage().isBlank() ? null : r.getWelcomeMessage().trim());
+        a.setName(name.trim());
+        a.setWelcomeMessage(welcome == null || welcome.isBlank() ? null : welcome.trim());
+        a.setWhatsapp(whatsapp);
+        a.setCountry(country);
+        a.setLogoUrl(logoUrl);
+        a.setIdProofUrl(idProofUrl);
+        a.setBdUserId(bdUserId);
+        a.setSuperAdminId(superAdminId);
         a.setOwnerId(owner.getId());
         agencies.save(a);
         AgencyMember m = new AgencyMember();
@@ -496,7 +519,42 @@ public class AgencyService {
         m.setRole(AgencyMember.OWNER);
         members.save(m);
         invites.cancelPendingForUser(owner.getId());
-        return agencyJson(a, owner);
+        return a;
+    }
+
+    /** A host invite from an agency owner (used when an agency is registered with starting hosts). */
+    @Transactional
+    public AgencyInvite inviteHostInternal(Agency a, User host) {
+        if (members.existsByUserId(host.getId())) throw ApiException.conflict(host.getName() + " is already hosting in an agency");
+        return invites.findByAgencyIdAndUserIdAndStatus(a.getId(), host.getId(), AgencyInvite.PENDING).orElseGet(() -> {
+            AgencyInvite inv = new AgencyInvite();
+            inv.setAgencyId(a.getId());
+            inv.setUserId(host.getId());
+            return invites.save(inv);
+        });
+    }
+
+    /**
+     * Numbers for one agency in [from, to): host salaries + agency commission from the level ladder, plus diamonds.
+     * Used by the BD dashboard (BD commission tiers run on the agency's host-salary total).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> salaryFor(String agencyId, Instant from, Instant to) {
+        List<AgencyLevel> ladder = levels.findAllByOrderByLevelAsc();
+        Window w = new Window(from, to);
+        BigDecimal host = BigDecimal.ZERO, agency = BigDecimal.ZERO;
+        long diamonds = 0;
+        for (AgencyMember m : members.findByAgencyIdOrderByJoinedAtAsc(agencyId)) {
+            Map<String, Object> st = stat(m, w, ladder);
+            host = host.add(bd(st.get("hostSalary")));
+            agency = agency.add(bd(st.get("agencySalary")));
+            diamonds += l(st.get("diamonds"));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("hostSalaries", host);
+        out.put("agencyCommission", agency);
+        out.put("diamonds", diamonds);
+        return out;
     }
 
     @Transactional
@@ -508,11 +566,13 @@ public class AgencyService {
         }
         if (r.getWelcomeMessage() != null) a.setWelcomeMessage(r.getWelcomeMessage().isBlank() ? null : r.getWelcomeMessage().trim());
         if (r.getActive() != null) a.setActive(r.getActive());
+        // who the agency works under: an empty string clears it
+        if (r.getSuperAdminId() != null) a.setSuperAdminId(r.getSuperAdminId().isBlank() ? null : r.getSuperAdminId());
+        if (r.getBdUserId() != null) a.setBdUserId(r.getBdUserId().isBlank() ? null : r.getBdUserId());
 
         if (r.getOwnerId() != null && !r.getOwnerId().isBlank() && !r.getOwnerId().equals(a.getOwnerId())) {
             User nu = users.findById(r.getOwnerId()).orElseThrow(() -> ApiException.notFound("New owner not found"));
             requireFreeUser(nu, a.getId());
-            if (nu.isSuperAdmin()) throw ApiException.conflict(nu.getName() + " is a super admin and can't run an agency");
             AgencyMember nm = members.findByUserId(nu.getId()).orElse(null);
             if (nm == null) {
                 nm = new AgencyMember();
@@ -545,7 +605,6 @@ public class AgencyService {
         Agency a = agencies.findById(agencyId).orElseThrow(() -> ApiException.notFound("Agency not found"));
         User u = users.findById(userId).orElseThrow(() -> ApiException.notFound("User not found"));
         if (members.existsByUserId(u.getId())) throw ApiException.conflict(u.getName() + " is already in an agency");
-        if (u.isSuperAdmin()) throw ApiException.conflict(u.getName() + " is a super admin and can't join an agency");
         AgencyMember m = new AgencyMember();
         m.setAgencyId(a.getId());
         m.setUserId(u.getId());

@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.*;
+import java.util.stream.Collectors;
 import java.util.*;
 
 /**
@@ -34,11 +35,16 @@ public class SuperAdminService {
     private final StoreService store;
     private final BadgeService badgeService;
     private final OfficialGrantRepository grants;
+    private final TeamService team;
+    private final AgencyRequestRepository agencyRequestRepo;
 
     public SuperAdminService(UserRepository users, SuperAdminSettingsRepository settingsRepo, AgencyRepository agencies,
                              AgencyMemberRepository members, GiftLogRepository giftLogs, PaymentOrderRepository payments,
                              HostSessionRepository hostSessionRepo, HostSessionService hostSessions, StoreService store,
-                             BadgeService badgeService, OfficialGrantRepository grants) {
+                             BadgeService badgeService, OfficialGrantRepository grants, TeamService team,
+                             AgencyRequestRepository agencyRequestRepo) {
+        this.team = team;
+        this.agencyRequestRepo = agencyRequestRepo;
         this.users = users;
         this.settingsRepo = settingsRepo;
         this.agencies = agencies;
@@ -133,10 +139,6 @@ public class SuperAdminService {
         return new Recharge(n, coins, inr);
     }
 
-    private List<String> allMemberIds() {
-        return members.findAll().stream().map(AgencyMember::getUserId).toList();
-    }
-
     private static double pct(long part, long whole) {
         if (whole <= 0) return 0;
         return BigDecimal.valueOf(part * 100.0 / whole).setScale(2, RoundingMode.HALF_UP).doubleValue();
@@ -171,9 +173,6 @@ public class SuperAdminService {
     public Map<String, Object> adminAdd(SuperAdminRequests.Create r) {
         User u = users.findById(r.getUserId()).orElseThrow(() -> ApiException.notFound("User not found"));
         if (u.isBanned()) throw ApiException.badRequest("This user is banned");
-        if (members.existsByUserId(u.getId())) {
-            throw ApiException.conflict(u.getName() + " is in an agency. A person can be an agency member or a super admin, not both. Remove them from the agency first.");
-        }
         u.setSuperAdmin(true);
         users.save(u);
         SuperAdminSettings s = settingsOf(u.getId());
@@ -206,15 +205,18 @@ public class SuperAdminService {
         User me = requireSuperAdmin(caller);
         SuperAdminSettings s = settingsOf(me.getId());
         Range month = range("month", null, null);
-        List<AgencyMember> all = members.findAll();
-        List<String> ids = all.stream().map(AgencyMember::getUserId).toList();
-        long agencyCount = agencies.count();
+        TeamService.Downline d = team.downline(me.getId()); // everyone under this super admin
+        List<String> ids = d.allHostIds();
+        long agencyCount = d.agencies().size();
 
         long gift = ids.isEmpty() ? 0 : giftLogs.sumReceivedByIds(ids, month.from(), month.to());
         Recharge rc = recharge(ids, month);
         long income = BigDecimal.valueOf(gift).multiply(s.getCommissionRate()).divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN).longValue();
         long perAgency = s.getAgencyTargetCoins();
         long milestoneTarget = perAgency * agencyCount;
+
+        Set<String> idSet = new HashSet<>(ids);
+        long live = hostSessionRepo.findByEndedAtIsNull().stream().filter(x -> idSet.contains(x.getUserId())).map(HostSession::getUserId).distinct().count();
 
         Map<String, Object> profile = slim(me);
         profile.put("phone", me.getPhone());
@@ -223,9 +225,10 @@ public class SuperAdminService {
         profile.put("periodLabel", month.firstDay() + " to " + month.lastDay());
 
         Map<String, Object> network = new LinkedHashMap<>();
+        network.put("bds", d.bds().size());
         network.put("agencies", agencyCount);
-        network.put("hosts", all.size());
-        network.put("liveStreamers", hostSessionRepo.countByEndedAtIsNull());
+        network.put("hosts", ids.size());
+        network.put("liveStreamers", live);
         network.put("rechargeInr", rc.inr());
         network.put("rechargeTxns", rc.txns());
 
@@ -239,7 +242,10 @@ public class SuperAdminService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("profile", profile);
         out.put("targetCoins", s.getTargetCoins());
+        out.put("targetPercent", pct(gift, s.getTargetCoins()));
+        out.put("teamGiftCoins", gift);
         out.put("income", income);
+        out.put("pendingRequests", agencyRequestRepo.countByStatus(AgencyRequest.PENDING));
         out.put("monthlySalary", s.getMonthlySalary());
         out.put("network", network);
         out.put("milestone", milestone);
@@ -253,18 +259,21 @@ public class SuperAdminService {
         User me = requireSuperAdmin(caller);
         Range r = range(period, from, to);
         long target = settingsOf(me.getId()).getAgencyTargetCoins();
+        TeamService.Downline d = team.downline(me.getId());
 
-        List<AgencyMember> all = members.findAll();
-        Map<String, Long> giftByUser = giftByUser(all.stream().map(AgencyMember::getUserId).toList(), r);
+        List<AgencyMember> all = d.agencies().isEmpty() ? List.of()
+                : members.findByAgencyIdIn(d.agencies().stream().map(Agency::getId).toList());
+        Map<String, Long> giftByUser = giftByUser(all.stream().map(AgencyMember::getUserId).distinct().toList(), r);
         Map<String, List<AgencyMember>> byAgency = new HashMap<>();
         for (AgencyMember m : all) byAgency.computeIfAbsent(m.getAgencyId(), k -> new ArrayList<>()).add(m);
 
-        List<Agency> list = agencies.findAll();
-        Map<String, User> owners = new HashMap<>();
-        users.findAllById(list.stream().map(Agency::getOwnerId).toList()).forEach(u -> owners.put(u.getId(), u));
+        Map<String, User> people = new HashMap<>();
+        Set<String> need = new HashSet<>();
+        d.agencies().forEach(a -> { need.add(a.getOwnerId()); if (a.getBdUserId() != null) need.add(a.getBdUserId()); });
+        users.findAllById(need).forEach(u -> people.put(u.getId(), u));
 
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (Agency a : list) {
+        for (Agency a : d.agencies()) {
             List<AgencyMember> ms = byAgency.getOrDefault(a.getId(), List.of());
             long gift = 0;
             for (AgencyMember m : ms) gift += giftByUser.getOrDefault(m.getUserId(), 0L);
@@ -273,7 +282,8 @@ public class SuperAdminService {
             row.put("code", a.getCode());
             row.put("name", a.getName());
             row.put("active", a.isActive());
-            row.put("owner", slim(owners.get(a.getOwnerId())));
+            row.put("owner", slim(people.get(a.getOwnerId())));
+            row.put("bd", a.getBdUserId() == null ? null : slim(people.get(a.getBdUserId())));
             row.put("members", ms.size());
             row.put("giftCoins", gift);
             row.put("target", target);
@@ -289,22 +299,35 @@ public class SuperAdminService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> teamHosts(User caller, String period, String from, String to) {
-        requireSuperAdmin(caller);
+        User me = requireSuperAdmin(caller);
         Range r = range(period, from, to);
-        List<AgencyMember> all = members.findAll();
-        Map<String, Long> giftByUser = giftByUser(all.stream().map(AgencyMember::getUserId).toList(), r);
+        TeamService.Downline d = team.downline(me.getId());
+
+        List<AgencyMember> agencyMembers = d.agencies().isEmpty() ? List.of()
+                : members.findByAgencyIdIn(d.agencies().stream().map(Agency::getId).toList());
+        Map<String, Long> giftByUser = giftByUser(d.allHostIds(), r);
         Map<String, User> um = new HashMap<>();
-        users.findAllById(all.stream().map(AgencyMember::getUserId).toList()).forEach(u -> um.put(u.getId(), u));
+        users.findAllById(d.allHostIds()).forEach(u -> um.put(u.getId(), u));
         Map<String, String> agencyName = new HashMap<>();
-        agencies.findAll().forEach(a -> agencyName.put(a.getId(), a.getName()));
+        d.agencies().forEach(a -> agencyName.put(a.getId(), a.getName()));
 
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (AgencyMember m : all) {
+        for (AgencyMember m : agencyMembers) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("user", slim(um.get(m.getUserId())));
             row.put("agency", agencyName.get(m.getAgencyId()));
+            row.put("direct", false);
             row.put("role", m.getRole());
             row.put("giftCoins", giftByUser.getOrDefault(m.getUserId(), 0L));
+            rows.add(row);
+        }
+        for (String uid : d.directHostIds()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("user", slim(um.get(uid)));
+            row.put("agency", null);
+            row.put("direct", true);
+            row.put("role", "HOST");
+            row.put("giftCoins", giftByUser.getOrDefault(uid, 0L));
             rows.add(row);
         }
         rows.sort((x, y) -> Long.compare((Long) y.get("giftCoins"), (Long) x.get("giftCoins")));
@@ -316,6 +339,46 @@ public class SuperAdminService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("label", r.label());
         out.put("hosts", top);
+        return out;
+    }
+
+    /** BDs under this super admin, with their agencies and the gift coins those agencies earned. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> teamBds(User caller, String period, String from, String to) {
+        User me = requireSuperAdmin(caller);
+        Range r = range(period, from, to);
+        TeamService.Downline d = team.downline(me.getId());
+
+        List<AgencyMember> all = d.agencies().isEmpty() ? List.of()
+                : members.findByAgencyIdIn(d.agencies().stream().map(Agency::getId).toList());
+        Map<String, Long> giftByUser = giftByUser(all.stream().map(AgencyMember::getUserId).distinct().toList(), r);
+        Map<String, String> bdOfAgency = new HashMap<>();
+        d.agencies().forEach(a -> { if (a.getBdUserId() != null) bdOfAgency.put(a.getId(), a.getBdUserId()); });
+
+        Map<String, Long> giftByBd = new HashMap<>();
+        for (AgencyMember m : all) {
+            String bd = bdOfAgency.get(m.getAgencyId());
+            if (bd != null) giftByBd.merge(bd, giftByUser.getOrDefault(m.getUserId(), 0L), Long::sum);
+        }
+        Map<String, Long> agenciesOfBd = d.agencies().stream().filter(a -> a.getBdUserId() != null)
+                .collect(Collectors.groupingBy(Agency::getBdUserId, Collectors.counting()));
+
+        Map<String, User> um = new HashMap<>();
+        users.findAllById(d.bds().stream().map(BdProfile::getUserId).toList()).forEach(u -> um.put(u.getId(), u));
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (BdProfile b : d.bds()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("user", slim(um.get(b.getUserId())));
+            row.put("agencies", agenciesOfBd.getOrDefault(b.getUserId(), 0L));
+            row.put("giftCoins", giftByBd.getOrDefault(b.getUserId(), 0L));
+            row.put("since", b.getCreatedAt());
+            rows.add(row);
+        }
+        rows.sort((x, y) -> Long.compare((Long) y.get("giftCoins"), (Long) x.get("giftCoins")));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("label", r.label());
+        out.put("bds", rows);
         return out;
     }
 
@@ -332,7 +395,7 @@ public class SuperAdminService {
     public Map<String, Object> reports(User caller, String period, String from, String to) {
         User me = requireSuperAdmin(caller);
         Range r = range(period, from, to);
-        List<String> ids = allMemberIds();
+        List<String> ids = team.downline(me.getId()).allHostIds();
 
         Map<LocalDate, long[]> days = new TreeMap<>(Comparator.reverseOrder()); // [rechargeInr, rechargeTxns, giftCoins, gifts]
         for (LocalDate d = r.firstDay(); !d.isAfter(r.lastDay()); d = d.plusDays(1)) days.put(d, new long[4]);

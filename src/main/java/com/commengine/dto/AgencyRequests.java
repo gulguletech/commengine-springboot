@@ -46,6 +46,9 @@ public final class AgencyRequests {
         @Size(max = 200) private String welcomeMessage;
         private Boolean active;
         private String ownerId;
+        /** Parents. Empty string clears. */
+        private String superAdminId;
+        private String bdUserId;
     }
 
     @Getter
