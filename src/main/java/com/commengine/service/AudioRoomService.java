@@ -95,6 +95,7 @@ public class AudioRoomService {
 
         Map<String, Object> data = new LinkedHashMap<>();
         Map<String, Object> roomJson = DtoMapper.audioRoomBase(room);
+        roomJson.put("host", DtoMapper.userBrief(host));
         roomJson.put("members", List.of(bareMember(hostMember)));
         data.put("room", roomJson);
         data.put("rtc", rtc);

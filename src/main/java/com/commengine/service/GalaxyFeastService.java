@@ -36,8 +36,8 @@ import java.util.*;
 public class GalaxyFeastService {
 
     public static final String GAME = "galaxy-feast";
-    public static final long BETTING_MS = 24_000; // was 30s: 6s moved to the draw so the spin builds suspense (the cycle stays 40s, so round numbers do not change)
-    public static final long DRAW_MS = 11_000; // the spin: starts fast and slows down until it stops on the winner (was 5s)
+    public static final long BETTING_MS = 20_000; // the cycle stays 40s so round numbers do not change: 4s moved from betting to the spin
+    public static final long DRAW_MS = 15_000; // the spin: starts very fast, slows down, crawls over the last tiles and stops with suspense
     public static final long RESULT_MS = 5_000;
     public static final long CYCLE_MS = BETTING_MS + DRAW_MS + RESULT_MS;
     /** Round numbers count from here so they stay small (1, 2, 3 ...). */
@@ -219,6 +219,7 @@ public class GalaxyFeastService {
         long total = 0;
         for (BetLine l : lines) {
             if (l.option() < 0 || l.option() >= MULT_X100.length) throw ApiException.badRequest("Invalid option");
+            if (l.option() >= ITEMS) throw ApiException.badRequest("You can't bet on salad or pizza"); // they only show which group won
             final long amt = l.amount();
             if (Arrays.stream(CHIPS).noneMatch(x -> x == amt)) throw ApiException.badRequest("Invalid bet amount");
             total += amt;

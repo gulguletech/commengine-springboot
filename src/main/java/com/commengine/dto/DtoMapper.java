@@ -143,6 +143,7 @@ public final class DtoMapper {
         m.put("createdAt", r.getCreatedAt());
         m.put("endedAt", r.getEndedAt());
         m.put("hostId", r.getHost().getId());
+        m.put("coverUrl", r.getCoverUrl()); // the room's own picture (header, minimized bubble, Home tile, room details)
         m.put("background", roomBackground(r));
         return m;
     }
