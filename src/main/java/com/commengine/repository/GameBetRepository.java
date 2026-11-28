@@ -46,4 +46,19 @@ public interface GameBetRepository extends JpaRepository<GameBet, String> {
     /** rows of [userId, totalPayout] for one round, best first */
     @Query("select b.userId, sum(b.payout) from GameBet b where b.game = :game and b.round = :round and b.settled = true group by b.userId having sum(b.payout) > 0 order by sum(b.payout) desc")
     List<Object[]> roundRevenue(@Param("game") String game, @Param("round") long round, Pageable pageable);
+
+    // ---- Fruit Wheel: live pool per option, top winners of a round (with what they bet) ------
+
+    /** rows of [optionIndex, totalAmount] for one round (everyone's bets) */
+    @Query("select b.optionIndex, coalesce(sum(b.amount), 0) from GameBet b where b.game = :game and b.round = :round group by b.optionIndex")
+    List<Object[]> poolByOption(@Param("game") String game, @Param("round") long round);
+
+    /** rows of [userId, totalBet, totalPayout] for one round, best payout first */
+    @Query("select b.userId, sum(b.amount), sum(b.payout) from GameBet b where b.game = :game and b.round = :round and b.settled = true group by b.userId having sum(b.payout) > 0 order by sum(b.payout) desc")
+    List<Object[]> roundTopWithBet(@Param("game") String game, @Param("round") long round, Pageable pageable);
+
+    // ---- Fruit Party ------------------------------------------------------------------------
+
+    @Query("select count(b) from GameBet b where b.game = :game and b.settled = false and b.round <= :maxRound")
+    long countUnsettled(@Param("game") String game, @Param("maxRound") long maxRound);
 }
